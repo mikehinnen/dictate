@@ -378,17 +378,38 @@ def run_listener(dictation: Dictation) -> None:
     # ⌘⇧9 silently do nothing. pynput's `listener.canonical(key)` maps
     # the physical key back to its layout-independent form, so modifier
     # combos work across keyboard layouts.
-    hotkey = HotKey(HotKey.parse(_hotkey_spec()), dictation.toggle)
+
+    def on_activate() -> None:
+        print("[hotkey] combo detected, toggling dictation")
+        dictation.toggle()
+
+    spec = _hotkey_spec()
+    hotkey = HotKey(HotKey.parse(spec), on_activate)
+
+    # Debug: count key events so we can confirm the listener is alive.
+    # DICTATE_KEY_TRACE=1 logs every canonical keypress to stderr
+    # (diagnostic only -- leaks keystrokes; only enable while debugging).
+    import os
+    trace = os.environ.get("DICTATE_KEY_TRACE") == "1"
 
     def for_canonical(handler):
-        # Late binding: `listener` is the name introduced by `as listener`
-        # in the with-statement below; the lambda resolves it at call time.
-        return lambda k: handler(listener.canonical(k))
+        def wrapped(k):
+            try:
+                canonical = listener.canonical(k)
+            except Exception as e:  # noqa: BLE001
+                print(f"[hotkey] canonical() error: {e}", file=sys.stderr)
+                return
+            if trace:
+                print(f"[hotkey] key={k!r} canonical={canonical!r}", file=sys.stderr)
+            handler(canonical)
+        return wrapped
 
+    print(f"[hotkey] listener starting; waiting for {spec}")
     with Listener(
         on_press=for_canonical(hotkey.press),
         on_release=for_canonical(hotkey.release),
     ) as listener:
+        print("[hotkey] listener running")
         listener.join()
 
 

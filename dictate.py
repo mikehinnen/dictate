@@ -1,27 +1,28 @@
 """
-Lokales Speech-to-Text-Diktat fuer macOS -- Menubar-App.
+Local speech-to-text dictation for macOS -- menubar app.
 
 Workflow:
-    Cmd+Shift+9 druecken (oder Menubar > Aufnahme starten)
-    sprechen
-    Cmd+Shift+9 druecken (oder Menubar > Aufnahme stoppen)
-    -> Text wird transkribiert und am Cursor eingefuegt (Cmd+V)
+    Press Cmd+Shift+9 (or menubar > Start recording)
+    speak
+    Press Cmd+Shift+9 again (or menubar > Stop recording)
+    -> text is transcribed and inserted at the cursor (Cmd+V).
 
-Hotkey waehrend Transkription laufend = Abbrechen (Text wird verworfen).
+Hotkey pressed during transcription = cancel (result is discarded).
 
-Menubar-Icon zeigt Status:
-    idle           🎙  (oder Resources/menubar-idle.png)
-    nimmt auf      🔴  (oder Resources/menubar-recording.png)
-    transkribiert  ⏳  (oder Resources/menubar-transcribing.png)
+Menubar icon shows state:
+    idle           🎙  (or Resources/menubar-idle.png)
+    recording      🔴  (or Resources/menubar-recording.png)
+    transcribing   ⏳  (or Resources/menubar-transcribing.png)
 
-Menue enthaelt: Aufnahme-Toggle, Verlauf (letzte 5), Sprache (DE/EN/Auto),
-"Beim Login starten" (macOS 13+), und Info-Zeilen zu Hotkey/Modell.
+Menu contains: Start/Stop toggle, History (last 5 -- click copies to
+clipboard), Language (German/English/Auto-detect), "Launch at login"
+(macOS 13+), and a model info line.
 
-Erste Einrichtung:
-    uv sync                                    # Abhaengigkeiten
-    uv run python dictate.py --download        # Modell (~1.5 GB) laden
-    bash launcher/build.sh                     # Swift-Launcher kompilieren
-    open Dictate.app                           # App starten (Doppelklick)
+First-time setup:
+    uv sync                                    # install dependencies
+    uv run python dictate.py --download        # preload model (~1.5 GB)
+    bash launcher/build.sh                     # compile Swift launcher
+    open Dictate.app                           # start the app
 """
 
 from __future__ import annotations
@@ -41,17 +42,17 @@ import sounddevice as sd
 from pynput.keyboard import Controller, Key, KeyCode, Listener
 
 # ============================================================================
-# Konfiguration
+# Configuration
 # ============================================================================
 
 MODEL = "mlx-community/whisper-large-v3-turbo"
 DEFAULT_LANGUAGE: str | None = "de"  # None = auto-detect
 
-# (Label im Menue, Whisper-Code oder None fuer Auto)
+# (Menu label, Whisper language code or None for auto)
 AVAILABLE_LANGUAGES: list[tuple[str, str | None]] = [
-    ("Deutsch", "de"),
+    ("German", "de"),
     ("English", "en"),
-    ("Auto-Erkennung", None),
+    ("Auto-detect", None),
 ]
 
 SAMPLE_RATE = 16_000
@@ -67,29 +68,29 @@ SOUND_STOP = "/System/Library/Sounds/Pop.aiff"
 SOUND_CANCEL = "/System/Library/Sounds/Funk.aiff"
 
 PASTE_DELAY_BEFORE = 0.05
-PASTE_DELAY_AFTER = 0.40  # grosszuegig: langsame Apps (Slack, Notion) brauchen das
+PASTE_DELAY_AFTER = 0.40  # generous: slow apps (Slack, Notion) need this
 
-# Menubar-Icons (Emoji-Fallback, falls keine PNGs im Bundle liegen)
+# Emoji fallback for the menubar icon (used when no PNGs are bundled).
 ICON_IDLE_EMOJI = "🎙"
 ICON_RECORDING_EMOJI = "🔴"
 ICON_TRANSCRIBING_EMOJI = "⏳"
 
-# Optionale Template-PNGs. Falls vorhanden -> werden als template image genutzt
-# und passen sich Dark/Light Mode an. Sonst Emoji-Fallback.
+# Optional template PNGs. If present, they are used as template images
+# (auto-adapt to Dark/Light mode). Otherwise emoji fallback.
 _PROJECT_DIR = Path(__file__).resolve().parent
 _RESOURCES = _PROJECT_DIR / "Dictate.app" / "Contents" / "Resources"
 ICON_IDLE_PNG = _RESOURCES / "menubar-idle.png"
 ICON_RECORDING_PNG = _RESOURCES / "menubar-recording.png"
 ICON_TRANSCRIBING_PNG = _RESOURCES / "menubar-transcribing.png"
 
-# Swift-Launcher-Binary im Bundle -- wird fuer Login-Item-Verwaltung genutzt,
-# weil SMAppService an die Bundle-Identitaet gebunden ist (ein Python-Child
-# hat die nicht; der Swift-Launcher schon).
+# Swift launcher binary inside the bundle -- used for login item management,
+# because SMAppService requires the caller's Bundle.main to be the .app
+# (a Python child process doesn't satisfy that; the Swift launcher does).
 _LAUNCHER_BIN = _PROJECT_DIR / "Dictate.app" / "Contents" / "MacOS" / "Dictate"
 
 
 # ============================================================================
-# NSPasteboard (via pyobjc, kommt mit rumps)
+# NSPasteboard (via pyobjc, shipped with rumps)
 # ============================================================================
 
 try:
@@ -97,7 +98,7 @@ try:
 
     _PASTEBOARD = NSPasteboard.generalPasteboard()
 except Exception as _e:  # noqa: BLE001
-    print(f"[clipboard] NSPasteboard nicht verfuegbar ({_e}), falle auf pbcopy/pbpaste zurueck.")
+    print(f"[clipboard] NSPasteboard unavailable ({_e}), falling back to pbcopy/pbpaste.")
     _PASTEBOARD = None
     NSPasteboardTypeString = None  # type: ignore[assignment]
 
@@ -122,7 +123,7 @@ def _clipboard_write(text: str) -> None:
 
 
 # ============================================================================
-# Audio-Aufnahme
+# Audio recording
 # ============================================================================
 
 def record_audio(stop_event: threading.Event) -> np.ndarray:
@@ -142,7 +143,7 @@ def record_audio(stop_event: threading.Event) -> np.ndarray:
     ):
         while not stop_event.is_set():
             if time.monotonic() - start_time > MAX_RECORDING_SECONDS:
-                print(f"[recorder] {MAX_RECORDING_SECONDS}s-Cap erreicht, stoppe.")
+                print(f"[recorder] {MAX_RECORDING_SECONDS}s cap reached, stopping.")
                 break
             time.sleep(0.05)
 
@@ -152,7 +153,7 @@ def record_audio(stop_event: threading.Event) -> np.ndarray:
 
 
 # ============================================================================
-# Transkription
+# Transcription
 # ============================================================================
 
 def transcribe(audio: np.ndarray, language: str | None) -> str:
@@ -167,12 +168,12 @@ def transcribe(audio: np.ndarray, language: str | None) -> str:
 
 
 # ============================================================================
-# Text einfuegen
+# Insert text
 # ============================================================================
 
 def insert_text(text: str) -> None:
     if not text:
-        print("[paste] Leerer Text, ueberspringe.")
+        print("[paste] Empty text, skipping.")
         return
 
     old = _clipboard_read()
@@ -189,11 +190,11 @@ def insert_text(text: str) -> None:
     try:
         _clipboard_write(old)
     except Exception as e:  # noqa: BLE001
-        print(f"[paste] Clipboard-Restore fehlgeschlagen: {e}", file=sys.stderr)
+        print(f"[paste] Clipboard restore failed: {e}", file=sys.stderr)
 
 
 # ============================================================================
-# Sound-Feedback
+# Sound feedback
 # ============================================================================
 
 def play_sound(path: str) -> None:
@@ -207,7 +208,7 @@ def play_sound(path: str) -> None:
 
 
 # ============================================================================
-# Login Item (via Swift-Launcher, der Bundle.main-Kontext hat)
+# Login Item (via the Swift launcher which has Bundle.main context)
 # ============================================================================
 
 def login_item_available() -> bool:
@@ -215,8 +216,8 @@ def login_item_available() -> bool:
 
 
 def login_item_status() -> str:
-    """Gibt 'enabled', 'disabled', 'requires-approval', 'not-found',
-    'unknown' oder 'unavailable' zurueck."""
+    """Returns 'enabled', 'disabled', 'requires-approval', 'not-found',
+    'unknown', or 'unavailable'."""
     if not login_item_available():
         return "unavailable"
     try:
@@ -236,7 +237,7 @@ def login_item_status() -> str:
 
 def set_login_item(enable: bool) -> tuple[bool, str]:
     if not login_item_available():
-        return False, "Launcher-Binary nicht gefunden (bash launcher/build.sh ausfuehren)."
+        return False, "Launcher binary not found (run bash launcher/build.sh)."
     flag = "--register-login-item" if enable else "--unregister-login-item"
     try:
         r = subprocess.run(
@@ -247,20 +248,20 @@ def set_login_item(enable: bool) -> tuple[bool, str]:
         )
         if r.returncode == 0:
             return True, ""
-        return False, (r.stderr or r.stdout or "unbekannter Fehler").strip()
+        return False, (r.stderr or r.stdout or "unknown error").strip()
     except Exception as e:  # noqa: BLE001
         return False, str(e)
 
 
 # ============================================================================
-# Dictation-Engine
+# Dictation engine
 # ============================================================================
 
 class Dictation:
-    """Verwaltet einen Aufnahme-/Transkriptions-Zyklus.
+    """Manages one record / transcribe cycle.
 
-    Zustaende: 'idle' -> 'recording' -> 'transcribing' -> 'idle'.
-    Toggle waehrend 'transcribing' = Abbrechen (Ergebnis wird verworfen).
+    States: 'idle' -> 'recording' -> 'transcribing' -> 'idle'.
+    Toggle while 'transcribing' = cancel (result is discarded).
     """
 
     def __init__(
@@ -302,21 +303,21 @@ class Dictation:
         self._stop_event = threading.Event()
         self._cancel_event = threading.Event()
         play_sound(SOUND_START)
-        print("[rec] Aufnahme laeuft.")
+        print("[rec] Recording started.")
         self._emit("recording")
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
 
     def _stop(self) -> None:
-        print("[rec] Stop-Signal gesendet.")
+        print("[rec] Stop signal sent.")
         self._stop_event.set()
 
     def _cancel(self) -> None:
-        print("[rec] Abbrechen waehrend Transkription.")
+        print("[rec] Cancel during transcription.")
         self._cancel_event.set()
         play_sound(SOUND_CANCEL)
-        # UI sofort zurueck -- die Transkription laeuft noch im Hintergrund
-        # weiter, aber das Ergebnis wird verworfen.
+        # UI goes back to idle immediately; the transcription thread keeps
+        # running in the background but its result is discarded.
         self._emit("idle")
 
     def _run(self) -> None:
@@ -324,33 +325,32 @@ class Dictation:
             audio = record_audio(self._stop_event)
             play_sound(SOUND_STOP)
             if self._cancel_event.is_set():
-                print("[rec] Abgebrochen vor Transkription.")
+                print("[rec] Cancelled before transcription.")
                 return
             duration = len(audio) / SAMPLE_RATE
-            print(f"[rec] Beendet ({duration:.1f}s). Transkribiere...")
+            print(f"[rec] Recording ended ({duration:.1f}s). Transcribing...")
             if duration < 0.3:
-                print("[rec] Zu kurz, ignoriere.")
+                print("[rec] Too short, ignoring.")
                 return
             self._emit("transcribing")
             text = transcribe(audio, self._language_getter())
             if self._cancel_event.is_set():
-                print(f"[rec] Ergebnis verworfen (Abbruch): {text!r}")
+                print(f"[rec] Result discarded (cancelled): {text!r}")
                 return
             print(f"[text] {text!r}")
             if text:
                 self._history_callback(text)
                 insert_text(text)
         except Exception as e:  # noqa: BLE001
-            print(f"[rec] Fehler: {e}", file=sys.stderr)
+            print(f"[rec] Error: {e}", file=sys.stderr)
         finally:
-            # Nur emittieren, wenn wir nicht schon via _cancel() auf idle
-            # geschaltet haben.
+            # Only emit idle if we haven't already switched via _cancel().
             if self._state != "idle":
                 self._emit("idle")
 
 
 # ============================================================================
-# Hotkey-Listener
+# Hotkey listener
 # ============================================================================
 
 def _normalize(key) -> object:
@@ -383,7 +383,7 @@ def run_listener(dictation: Dictation) -> None:
 
 
 # ============================================================================
-# Menubar-App
+# Menubar app
 # ============================================================================
 
 def _hotkey_label() -> str:
@@ -409,7 +409,7 @@ def _truncate(text: str, max_len: int) -> str:
 
 class DictateApp(rumps.App):
     def __init__(self) -> None:
-        # Titel / Icon werden in _apply_appearance gesetzt.
+        # Title / icon are set in _apply_appearance().
         super().__init__(ICON_IDLE_EMOJI, quit_button=None)
 
         self._language: str | None = DEFAULT_LANGUAGE
@@ -419,17 +419,17 @@ class DictateApp(rumps.App):
             for p in (ICON_IDLE_PNG, ICON_RECORDING_PNG, ICON_TRANSCRIBING_PNG)
         )
 
-        # ---- Menue aufbauen ----
-        # Kein key= mehr: NSStatusItem-Menues feuern keyEquivalents nur
-        # waehrend das Menu offen ist. Der globale Hotkey ist ⌘⇧9 (pynput).
-        # Stattdessen den Hotkey direkt im Titel anzeigen.
+        # ---- Build menu ----
+        # No key= attribute here: NSStatusItem menus only fire keyEquivalents
+        # while the menu is open. The real global hotkey is ⌘⇧9 (pynput).
+        # Surface it inline in the item title instead.
         self._toggle_item = rumps.MenuItem(
-            f"Aufnahme starten  ({_hotkey_label()})",
+            f"Start recording  ({_hotkey_label()})",
             callback=self._on_toggle_clicked,
         )
 
-        # Verlauf: fixe Anzahl Platzhalter, wir updaten nur Titel + Callback.
-        self._history_menu = rumps.MenuItem("Verlauf")
+        # History: fixed slots; we update title + callback on each new entry.
+        self._history_menu = rumps.MenuItem("History")
         self._history_items: list[rumps.MenuItem] = []
         for _ in range(HISTORY_SIZE):
             item = rumps.MenuItem("—")
@@ -437,9 +437,9 @@ class DictateApp(rumps.App):
             self._history_menu.add(item)
         self._refresh_history_menu()
 
-        # Sprache
+        # Language
         self._language_items: dict[str | None, rumps.MenuItem] = {}
-        language_menu = rumps.MenuItem("Sprache")
+        language_menu = rumps.MenuItem("Language")
         for label, code in AVAILABLE_LANGUAGES:
             item = rumps.MenuItem(
                 label, callback=self._make_language_setter(code)
@@ -449,16 +449,16 @@ class DictateApp(rumps.App):
             self._language_items[code] = item
             language_menu.add(item)
 
-        # Login Item (nur wenn verfuegbar)
+        # Login Item (only if the launcher can service it)
         self._login_item: rumps.MenuItem | None = None
         initial_status = login_item_status()
         if initial_status != "unavailable":
             self._login_item = rumps.MenuItem(
-                "Beim Login starten", callback=self._on_login_toggle
+                "Launch at login", callback=self._on_login_toggle
             )
             self._login_item.state = 1 if initial_status == "enabled" else 0
 
-        # Menue zusammensetzen
+        # Assemble menu
         menu: list = [
             self._toggle_item,
             None,
@@ -469,16 +469,17 @@ class DictateApp(rumps.App):
             menu += [None, self._login_item]
         menu += [
             None,
-            # Hotkey steht direkt im Toggle-Item -- Info-Zeile waere Doppelung.
-            rumps.MenuItem(f"Modell: {MODEL.split('/')[-1]}"),
+            # The global hotkey is already shown in the toggle item; an info
+            # row would be duplicate.
+            rumps.MenuItem(f"Model: {MODEL.split('/')[-1]}"),
             None,
             rumps.MenuItem(
-                "Beenden", callback=self._on_quit_clicked, key="q"
+                "Quit", callback=self._on_quit_clicked, key="q"
             ),
         ]
         self.menu = menu
 
-        # ---- Dictation + Listener starten ----
+        # ---- Start dictation + listener ----
         self.dictation = Dictation(
             state_callback=self._on_state_change,
             language_getter=lambda: self._language,
@@ -489,19 +490,19 @@ class DictateApp(rumps.App):
         )
         self._listener_thread.start()
 
-        # Initiales Erscheinungsbild setzen.
+        # Apply initial appearance.
         self._apply_appearance("idle")
 
-        # Modell im Hintergrund vorwaermen, damit die erste echte Aufnahme
-        # nicht den MLX-Kaltstart mitschleppt.
+        # Preload the model in the background so the first real transcription
+        # doesn't eat the MLX cold-start.
         self._preload_thread = threading.Thread(
             target=self._preload_model, daemon=True
         )
         self._preload_thread.start()
 
-        print(f"[app] Menubar-App gestartet. Hotkey: {_hotkey_label()}")
-        print(f"[app] Login-Item-Status: {initial_status}")
-        print(f"[app] Icons: {'PNG' if self._use_png_icons else 'Emoji'}")
+        print(f"[app] Menubar app started. Hotkey: {_hotkey_label()}")
+        print(f"[app] Login item status: {initial_status}")
+        print(f"[app] Icons: {'PNG' if self._use_png_icons else 'emoji'}")
 
     # ---------- Appearance ----------
 
@@ -511,7 +512,8 @@ class DictateApp(rumps.App):
                 "recording": ICON_RECORDING_PNG,
                 "transcribing": ICON_TRANSCRIBING_PNG,
             }.get(state, ICON_IDLE_PNG)
-            # rumps: icon-Property setzt NSStatusItem.button.image als Template.
+            # rumps: the icon property sets NSStatusItem.button.image as
+            # template (auto Dark/Light).
             self.title = None
             self.icon = str(icon_path)
             self.template = True
@@ -525,15 +527,15 @@ class DictateApp(rumps.App):
 
         hk = _hotkey_label()
         if state == "recording":
-            self._toggle_item.title = f"Aufnahme stoppen  ({hk})"
+            self._toggle_item.title = f"Stop recording  ({hk})"
         elif state == "transcribing":
-            self._toggle_item.title = f"Abbrechen  ({hk})"
+            self._toggle_item.title = f"Cancel  ({hk})"
         else:
-            self._toggle_item.title = f"Aufnahme starten  ({hk})"
+            self._toggle_item.title = f"Start recording  ({hk})"
 
     def _on_state_change(self, state: str) -> None:
-        # rumps-Property-Updates aus Worker-Threads funktionieren fuer
-        # title/icon in der Praxis (AppKit queued die Aenderung).
+        # Updating rumps properties from worker threads works in practice for
+        # title/icon (AppKit queues the change).
         self._apply_appearance(state)
 
     # ---------- Preload ----------
@@ -542,9 +544,9 @@ class DictateApp(rumps.App):
         try:
             silence = np.zeros(SAMPLE_RATE, dtype=np.float32)
             transcribe(silence, self._language)
-            print("[preload] Modell geladen, erste Transkription ist schnell.")
+            print("[preload] Model loaded; first transcription will be fast.")
         except Exception as e:  # noqa: BLE001
-            print(f"[preload] Fehler: {e}", file=sys.stderr)
+            print(f"[preload] Error: {e}", file=sys.stderr)
 
     # ---------- Callbacks ----------
 
@@ -559,22 +561,22 @@ class DictateApp(rumps.App):
             self._language = code
             for c, item in self._language_items.items():
                 item.state = 1 if c == code else 0
-            label = {"de": "Deutsch", "en": "English", None: "Auto"}.get(code, str(code))
-            print(f"[lang] gewechselt zu {label} ({code!r})")
+            label = {"de": "German", "en": "English", None: "Auto"}.get(code, str(code))
+            print(f"[lang] switched to {label} ({code!r})")
         return handler
 
     def _on_login_toggle(self, sender) -> None:
         assert self._login_item is not None
-        enable = sender.state == 0  # aktuell aus -> einschalten
+        enable = sender.state == 0  # currently off -> turn on
         ok, err = set_login_item(enable)
         if ok:
             sender.state = 1 if enable else 0
-            print(f"[loginitem] {'aktiviert' if enable else 'deaktiviert'}")
+            print(f"[loginitem] {'enabled' if enable else 'disabled'}")
         else:
-            print(f"[loginitem] fehlgeschlagen: {err}", file=sys.stderr)
+            print(f"[loginitem] failed: {err}", file=sys.stderr)
             rumps.alert(
-                title="Login-Item",
-                message=f"Konnte nicht {'aktiviert' if enable else 'deaktiviert'} werden:\n{err}",
+                title="Launch at login",
+                message=f"Could not {'enable' if enable else 'disable'} login item:\n{err}",
             )
 
     # ---------- History ----------
@@ -588,20 +590,21 @@ class DictateApp(rumps.App):
             if i < len(self._history):
                 entry = self._history[i]
                 item.title = _truncate(entry, 60)
-                item.set_callback(self._make_history_paster(entry))
+                item.set_callback(self._make_history_copier(entry))
             else:
                 item.title = "—" if i == 0 else ""
                 item.set_callback(None)
-        # Wenn Verlauf leer ist, zeige eine informative Zeile.
+        # Informative line when the history is empty.
         if len(self._history) == 0:
-            self._history_items[0].title = "(noch leer)"
+            self._history_items[0].title = "(empty)"
 
-    def _make_history_paster(self, text: str):
+    def _make_history_copier(self, text: str):
+        """History click = copy to clipboard only. User then presses ⌘V
+        wherever they want. This is simpler and safer than auto-paste
+        (which depends on the focused app and TCC Accessibility)."""
         def handler(_sender) -> None:
-            print(f"[history] erneut einfuegen: {text!r}")
-            threading.Thread(
-                target=insert_text, args=(text,), daemon=True
-            ).start()
+            _clipboard_write(text)
+            print(f"[history] copied to clipboard: {text!r}")
         return handler
 
 
@@ -610,18 +613,18 @@ class DictateApp(rumps.App):
 # ============================================================================
 
 def warmup_download() -> None:
-    print(f"Lade Modell {MODEL} (~1.5 GB beim ersten Mal)...")
+    print(f"Downloading model {MODEL} (~1.5 GB on first run)...")
     silence = np.zeros(SAMPLE_RATE, dtype=np.float32)
     text = transcribe(silence, DEFAULT_LANGUAGE)
-    print(f"Modell bereit. (Stille -> {text!r})")
+    print(f"Model ready. (silence -> {text!r})")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Lokales Whisper-Diktat fuer macOS")
+    parser = argparse.ArgumentParser(description="Local Whisper dictation for macOS")
     parser.add_argument(
         "--download",
         action="store_true",
-        help="Modell herunterladen und beenden (einmaliger Warmup).",
+        help="Download the model and exit (one-off warmup).",
     )
     args = parser.parse_args()
 

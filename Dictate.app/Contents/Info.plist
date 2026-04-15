@@ -23,7 +23,7 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Dictate braucht das Mikrofon, um deine Sprache lokal in Text umzuwandeln.</string>
+    <string>Dictate needs microphone access to transcribe your speech to text locally.</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSHighResolutionCapable</key>

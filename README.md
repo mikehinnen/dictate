@@ -1,147 +1,161 @@
-# dictate — lokales Whisper-Diktat für macOS
+# dictate — local Whisper dictation for macOS
 
-Menubar-App für Speech-to-Text, läuft zu 100 % lokal auf Apple Silicon.
-Kein Cloud-Service, kein API-Key — nur dein Mikro und MLX-Whisper.
+Menubar app for speech-to-text, running 100% locally on Apple Silicon.
+No cloud service, no API key — just your microphone and MLX-Whisper.
 
-## Benutzung
+## Usage
 
-Doppelklick auf `Dictate.app` → 🎙-Icon erscheint oben rechts in der Menüleiste.
+Double-click `Dictate.app` → 🎙 icon appears in the menu bar (top right).
 
-| Aktion | Wie |
+| Action | How |
 |---|---|
-| Aufnahme starten/stoppen | Hotkey `⌘⇧9` **oder** Klick auf 🎙 → "Aufnahme starten" |
-| Transkription abbrechen | Hotkey nochmal drücken, solange ⏳ läuft — Ergebnis wird verworfen |
-| Sprache wechseln | Icon → "Sprache" → Deutsch / English / Auto-Erkennung |
-| Letzte 5 Transkriptionen erneut einfügen | Icon → "Verlauf" → Eintrag anklicken |
-| Bei Anmeldung starten | Icon → "Beim Login starten" (Checkbox) |
-| Status sehen | Icon: 🎙 idle · 🔴 nimmt auf · ⏳ transkribiert |
-| Beenden | Icon → "Beenden" (oder `⌘Q` im Menü) |
+| Start/stop recording | Hotkey `⌘⇧9` **or** click 🎙 → "Start recording" |
+| Cancel transcription | Press the hotkey again while ⏳ is running — result is discarded |
+| Switch language | 🎙 → "Language" → German / English / Auto-detect |
+| Copy a past transcription | 🎙 → "History" → click entry (text is put on the clipboard) |
+| Launch at login | 🎙 → "Launch at login" (checkbox) |
+| See state | Icon: 🎙 idle · 🔴 recording · ⏳ transcribing |
+| Quit | 🎙 → "Quit" (or `⌘Q` while the menu is open) |
 
-Nach der Transkription wird der Text per `⌘V` ins gerade aktive Fenster
-eingefügt. Ablauf in TextEdit: Cursor reinsetzen → `⌘⇧9` → sprechen → `⌘⇧9`
-→ Text erscheint.
+After each live transcription the text is pasted into the focused window via
+`⌘V`. Example flow in TextEdit: place cursor → `⌘⇧9` → speak → `⌘⇧9` → text
+appears.
 
-## Setup (einmalig)
+**History entries don't auto-paste** — clicking them just copies the text to
+the clipboard so you can `⌘V` it wherever you want.
+
+## First-time setup
 
 ```sh
-uv sync                                      # Dependencies installieren
-uv run python dictate.py --download          # Whisper-Modell (~1.5 GB) laden
-bash launcher/build.sh                       # Swift-Launcher kompilieren
-open Dictate.app                             # erstes Mal starten
+uv sync                                      # install dependencies
+uv run python dictate.py --download          # download Whisper model (~1.5 GB)
+bash launcher/build.sh                       # compile the Swift launcher
+open Dictate.app                             # first launch
 ```
 
-Der **Swift-Launcher** (`launcher/Dictate.swift`) ist eine winzige native Binary,
-die als `Dictate.app/Contents/MacOS/Dictate` lebt. Sie startet `uv run python
-dictate.py` als Child-Prozess. Wichtig wegen macOS TCC: ein Shell-Script als
-Bundle-Executable würde die Bundle-Identität bei jedem `exec` verlieren — dann
-zeigt macOS in den Permissions-Listen `uv` oder `python` statt `Dictate`. Eine
-native Binary behält die Identität.
+The **Swift launcher** (`launcher/Dictate.swift`) is a tiny native binary
+that lives at `Dictate.app/Contents/MacOS/Dictate`. It spawns `uv run python
+dictate.py` as a child process. This matters for macOS TCC: a shell script as
+the bundle executable would lose bundle identity on every `exec`, and the
+Permissions panes would list `uv` or `python` instead of `Dictate`. A native
+binary preserves the identity.
 
-Die Binary ist **nicht im Repo** (per `.gitignore` ausgeschlossen) — jeder Checkout
-muss `bash launcher/build.sh` einmal laufen lassen. Derselbe Befehl auch, wenn du
-`Dictate.swift` änderst.
+The binary is **not committed** (see `.gitignore`) — every checkout must run
+`bash launcher/build.sh` once. Run the same command after editing
+`Dictate.swift`.
 
-## macOS-Permissions (einmalig)
+## macOS permissions (one-time)
 
-Beim ersten Tastendruck / ersten Recording fragt macOS drei Berechtigungen ab.
-Diese werden an **Dictate.app** gebunden — *nicht* mehr ans Terminal.
+On first keystroke / first recording, macOS asks for three permissions. They
+bind to **Dictate.app** — *not* to the Terminal.
 
-| Permission | Wofür | Wann gefragt |
+| Permission | Why | When prompted |
 |---|---|---|
-| **Microphone** | Audio-Aufnahme | Beim ersten Recording |
-| **Accessibility** | `⌘V` simulieren | Beim ersten Einfügen |
-| **Input Monitoring** | Globaler Hotkey | Beim ersten App-Start |
+| **Microphone** | Audio capture | First recording |
+| **Accessibility** | Simulate `⌘V` | First paste |
+| **Input Monitoring** | Global hotkey | First launch |
 
-Direktlinks zu den Settings-Panes:
+Direct links to the settings panes:
 ```sh
 open "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
 open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
 open "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"
 ```
 
-In jedem Pane: `+` → `Dictate.app` aus dem Projektordner hinzufügen → Toggle
-einschalten. Danach `Dictate.app` einmal komplett quitten (Menü → Beenden) und
-neu öffnen.
+In each pane: `+` → pick `Dictate.app` from the project folder → toggle on.
+Then fully quit the app (menu → Quit) and reopen it.
 
-## Anpassen
+### If you move or rename the project folder
 
-Konstanten oben in `dictate.py`:
+TCC permissions on **unsigned** apps are path-bound. Moving or renaming the
+`.app` (or any parent folder) invalidates the grants silently — macOS keeps
+the stale entry, doesn't re-prompt, and the app just silently lacks the
+permission. Symptom: the hotkey stops firing, or `⌘V` no longer simulates.
 
-| Konstante | Default | Mögliche Werte |
+Fix: in each of the three panes above, select the stale `Dictate` entry, hit
+`−`, then `+` to re-add it from the new path and toggle it on. Restart the
+app once afterwards.
+
+## Customization
+
+Constants at the top of `dictate.py`:
+
+| Constant | Default | Notes |
 |---|---|---|
-| `MODEL` | `mlx-community/whisper-large-v3-turbo` | `whisper-large-v3-turbo-german-f16`, `whisper-medium-mlx`, `whisper-small-mlx` |
-| `DEFAULT_LANGUAGE` | `"de"` | `"en"`, `None` (auto) — zur Laufzeit via Menü wechselbar |
-| `MAX_RECORDING_SECONDS` | `120` | beliebig |
-| `HISTORY_SIZE` | `5` | wie viele Einträge der Verlauf hält |
-| `HOTKEY_MODIFIERS` | `{Key.cmd, Key.shift}` | `⌘`+`⇧` sind auf macOS am stabilsten |
-| `HOTKEY_TRIGGER` | `KeyCode.from_char("9")` | jede Buchstaben-/Zifferntaste |
+| `MODEL` | `mlx-community/whisper-large-v3-turbo` | try `whisper-large-v3-turbo-german-f16`, `whisper-medium-mlx`, `whisper-small-mlx` |
+| `DEFAULT_LANGUAGE` | `"de"` | `"en"`, `None` (auto) — also switchable at runtime via menu |
+| `MAX_RECORDING_SECONDS` | `120` | arbitrary |
+| `HISTORY_SIZE` | `5` | how many history entries to keep |
+| `HOTKEY_MODIFIERS` | `{Key.cmd, Key.shift}` | `⌘`+`⇧` is the most robust combo on macOS |
+| `HOTKEY_TRIGGER` | `KeyCode.from_char("9")` | any letter/digit |
 
-### Eigenes Menubar-Icon (optional)
+### Custom menubar icon (optional)
 
-Drei PNGs in `Dictate.app/Contents/Resources/` ablegen, dann nutzt die App
-automatisch Template-Bilder statt Emoji (passen sich Dark/Light Mode an):
+Drop three PNGs into `Dictate.app/Contents/Resources/` and the app will use
+them as template images (auto-adapt to Dark/Light mode):
 
 - `menubar-idle.png`
 - `menubar-recording.png`
 - `menubar-transcribing.png`
 
-Empfohlen: 22×22 oder 44×44 PNG, schwarz auf transparent, Alpha-Kanal = Form.
-macOS invertiert sie automatisch in Dark Mode.
+Recommended: 22×22 or 44×44 PNG, black on transparent, alpha channel defines
+the shape. macOS inverts them automatically in Dark mode.
 
 ## Logs
 
-`Dictate.app` schreibt nach `~/Library/Logs/Dictate.log`. Live mitlesen:
+`Dictate.app` writes to `~/Library/Logs/Dictate.log`. Live tail:
 
 ```sh
 tail -f ~/Library/Logs/Dictate.log
 ```
 
-Oder via Console.app öffnen.
+Or open `Console.app`.
 
 ## Troubleshooting
 
-- **Icon erscheint nicht** → Log checken (`tail -50 ~/Library/Logs/Dictate.log`).
-  Häufigste Ursache: `uv` ist nicht in `~/.local/bin`, `/opt/homebrew/bin` oder
-  `/usr/local/bin`. Pfad in `launcher/Dictate.swift` (`uvCandidates`) ergänzen
-  und `bash launcher/build.sh` neu laufen lassen.
-- **Hotkey reagiert nicht** → *Input Monitoring* checken; `Dictate.app` muss
-  drin sein und Toggle an. App neu starten nach Permission-Erteilung.
-- **Cmd+V fügt nichts ein** → *Accessibility*-Permission fehlt; siehe oben.
-  Falls es bei langsamen Apps (Slack, Notion) trotzdem nicht klappt:
-  `PASTE_DELAY_AFTER` in `dictate.py` weiter erhöhen.
-- **Falsche deutsche Wörter** → `MODEL` auf
-  `mlx-community/whisper-large-v3-turbo-german-f16` (DE-finetuned) wechseln.
-- **Erste Transkription nach Start ist schnell** → Modell wird beim App-Start
-  im Hintergrund vorgewärmt; sichtbar im Log als `[preload] Modell geladen`.
-- **Modell-Cache löschen** → `rm -rf ~/.cache/huggingface/hub/models--mlx-community--whisper-*`
-- **"Beim Login starten" greift nicht** → braucht macOS 13+. Status im
-  Terminal prüfen: `./Dictate.app/Contents/MacOS/Dictate --login-item-status`.
-- **Permissions zeigen "uv" oder "python" statt "Dictate"** → alter
-  Shell-Launcher noch im Bundle. Lösung: `bash launcher/build.sh`, dann alte
-  Einträge aus den drei Permission-Panes löschen (Anwählen + `−`),
-  `Dictate.app` neu starten.
+- **Icon doesn't appear** → check the log (`tail -50 ~/Library/Logs/Dictate.log`).
+  Most common cause: `uv` isn't in `~/.local/bin`, `/opt/homebrew/bin`, or
+  `/usr/local/bin`. Add your path to `uvCandidates` in `launcher/Dictate.swift`
+  and re-run `bash launcher/build.sh`.
+- **Hotkey doesn't fire** → check *Input Monitoring*; `Dictate.app` must be
+  in the list and toggled on. Restart the app after granting. If the folder
+  was moved or renamed, see *"If you move or rename the project folder"*.
+- **`⌘V` doesn't paste after transcription** → *Accessibility* permission
+  missing (see above). If it still fails in slow apps (Slack, Notion),
+  increase `PASTE_DELAY_AFTER` in `dictate.py`.
+- **Wrong German words in the transcript** → switch `MODEL` to
+  `mlx-community/whisper-large-v3-turbo-german-f16` (DE-finetuned).
+- **First transcription after startup is fast** → the model is preloaded in
+  the background; look for `[preload] Model loaded` in the log.
+- **Clear the model cache** → `rm -rf ~/.cache/huggingface/hub/models--mlx-community--whisper-*`
+- **"Launch at login" doesn't work** → requires macOS 13+. Check status from
+  the terminal: `./Dictate.app/Contents/MacOS/Dictate --login-item-status`.
+- **Permissions panes list "uv" or "python" instead of "Dictate"** → old
+  shell-script launcher still in the bundle. Fix: `bash launcher/build.sh`,
+  then remove the stale entries from the three permission panes (select +
+  `−`), restart `Dictate.app`.
 
-## Im Terminal starten (Fallback / Debugging)
+## Terminal mode (fallback / debugging)
 
-Wenn die App-Variante zickt, geht der direkte Weg weiter:
+If the .app route acts up, the direct path still works:
 
 ```sh
 uv run python dictate.py
 ```
 
-Permissions werden dann an die Terminal-Binary gebunden statt an `Dictate.app`.
-Das Login-Item-Menü ist in diesem Modus deaktiviert, weil `SMAppService`
-Bundle-Kontext braucht.
+Permissions then bind to the Terminal binary instead of `Dictate.app`. The
+"Launch at login" menu item is disabled in this mode because `SMAppService`
+needs bundle context.
 
 ## Limits
 
-- Aufnahmen sind auf 120 s gekappt (`MAX_RECORDING_SECONDS`).
-- Abbrechen während Transkription ist *best effort* — MLX lässt sich nicht
-  mid-flight stoppen; das Ergebnis wird nur verworfen.
-- Beim Einfügen wird die Zwischenablage kurz überschrieben und danach restored
-  (best effort, nur Plain Text — Bilder/Rich-Text können verloren gehen).
-- Verlauf ist nur in-memory; beim App-Neustart ist er leer.
+- Recordings are capped at 120 s (`MAX_RECORDING_SECONDS`).
+- Cancel-during-transcription is *best effort* — MLX can't be stopped
+  mid-flight; the result is simply discarded.
+- When pasting, the clipboard is briefly overwritten and then restored
+  (best effort, plain text only — images/rich text may be lost).
+- The history is in-memory only; it's empty after each app restart.
 
-## Lizenz
+## License
 
-MIT — siehe [`LICENSE`](LICENSE).
+MIT — see [`LICENSE`](LICENSE).

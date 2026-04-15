@@ -1,28 +1,28 @@
-// Dictate.swift -- Native Launcher fuer Dictate.app.
+// Dictate.swift -- Native launcher for Dictate.app.
 //
-// Warum nicht ein Shell-Script? macOS TCC verfolgt die Bundle-Identitaet ueber
-// die Prozesskette. Sobald ein Shell-Script `exec` macht, geht die Bundle-ID
-// verloren und TCC listet stattdessen den Namen der Final-Binary (z.B. "uv").
-// Eine native Binary als Bundle-Executable behaelt die Identitaet, Childs
-// erben sie via posix_spawn (Process) -- dann steht "Dictate" in den
-// Permission-Listen.
+// Why not a shell script? macOS TCC tracks the bundle identity through the
+// process chain. As soon as a shell script `exec`s the final binary, the
+// bundle identity is lost and TCC lists that binary's name (e.g. "uv")
+// instead of the app. A native binary as Bundle-Executable keeps the
+// identity, and children inherit it via posix_spawn (Process) -- so
+// "Dictate" shows up cleanly in the Permissions panes.
 //
-// CLI-Modi (werden von dictate.py genutzt, um das Login-Item zu verwalten --
-// SMAppService verlangt Bundle.main-Kontext, den hat nur diese Binary):
-//   --login-item-status        gibt "enabled" / "disabled" / ... auf stdout
-//   --register-login-item      registriert die App als Login Item
-//   --unregister-login-item    entfernt sie wieder
-// Ohne Argument laeuft die normale Launcher-Logik (spawnt Python).
+// CLI modes (invoked by dictate.py to manage the login item -- SMAppService
+// requires Bundle.main context, which only this binary has):
+//   --login-item-status        prints "enabled" / "disabled" / ... to stdout
+//   --register-login-item      registers the app as a login item
+//   --unregister-login-item    removes it again
+// Without arguments, the normal launcher logic runs (spawns Python).
 //
 // Build:
 //   bash launcher/build.sh
-// (kompiliert nach Dictate.app/Contents/MacOS/Dictate)
+// (compiles to Dictate.app/Contents/MacOS/Dictate)
 
 import Foundation
 import ServiceManagement
 
 // ---------------------------------------------------------------------------
-// stderr-Helper
+// stderr helper
 // ---------------------------------------------------------------------------
 
 func writeStderr(_ s: String) {
@@ -33,7 +33,7 @@ func writeStderr(_ s: String) {
 }
 
 // ---------------------------------------------------------------------------
-// CLI-Modi: Login Item via SMAppService
+// CLI modes: login item via SMAppService
 // ---------------------------------------------------------------------------
 
 @available(macOS 13.0, *)
@@ -57,7 +57,7 @@ func registerLoginItem(_ register: Bool) -> Int32 {
         }
         return 0
     } catch {
-        writeStderr("SMAppService-Fehler: \(error.localizedDescription)")
+        writeStderr("SMAppService error: \(error.localizedDescription)")
         return 1
     }
 }
@@ -75,7 +75,7 @@ if args.count > 1 {
         case "--unregister-login-item":
             exit(registerLoginItem(false))
         default:
-            // Unbekanntes Flag -> normale Launcher-Logik (Python starten).
+            // Unknown flag -> fall through to the normal launcher logic.
             break
         }
     } else {
@@ -83,7 +83,7 @@ if args.count > 1 {
         case "--login-item-status",
              "--register-login-item",
              "--unregister-login-item":
-            writeStderr("Login Item braucht macOS 13+.")
+            writeStderr("Login item management requires macOS 13+.")
             exit(2)
         default:
             break
@@ -92,7 +92,7 @@ if args.count > 1 {
 }
 
 // ---------------------------------------------------------------------------
-// Normaler Launcher-Modus: Python-Child starten
+// Normal launcher mode: spawn the Python child
 // ---------------------------------------------------------------------------
 
 // Logging
@@ -115,17 +115,17 @@ func log(_ message: String) {
 }
 
 log("\n==========================================")
-log("Dictate gestartet: \(Date())")
+log("Dictate launched: \(Date())")
 log("==========================================")
 
-// Projektverzeichnis = Eltern-Verzeichnis von Dictate.app
+// Project directory = parent of Dictate.app
 let bundleURL = URL(fileURLWithPath: Bundle.main.bundlePath)
 let projectDir = bundleURL.deletingLastPathComponent()
 log("Bundle: \(bundleURL.path)")
 log("Project: \(projectDir.path)")
 
-// uv-Pfad -- GUI-gestartete Apps haben kein .zshrc-PATH, deshalb absoluter
-// Pfad. Mehrere Standardorte ausprobieren.
+// uv path -- GUI-launched apps don't inherit .zshrc PATH, so we need an
+// absolute path. Try several standard locations.
 let uvCandidates = [
     NSString(string: "~/.local/bin/uv").expandingTildeInPath,
     "/opt/homebrew/bin/uv",
@@ -135,19 +135,19 @@ let uvCandidates = [
 guard let uvPath = uvCandidates.first(where: {
     FileManager.default.isExecutableFile(atPath: $0)
 }) else {
-    log("FEHLER: uv nicht gefunden in: \(uvCandidates.joined(separator: ", "))")
+    log("ERROR: uv not found in: \(uvCandidates.joined(separator: ", "))")
     exit(1)
 }
 log("uv: \(uvPath)")
 
-// Logfile-Handle fuer Child stdout/stderr.
+// Log file handle for child stdout/stderr.
 guard let childLog = try? FileHandle(forWritingTo: logURL) else {
-    log("FEHLER: konnte Logfile fuer Child nicht oeffnen")
+    log("ERROR: could not open log file for child")
     exit(1)
 }
 childLog.seekToEndOfFile()
 
-// Python-Script ueber uv starten.
+// Run the Python script through uv.
 let task = Process()
 task.executableURL = URL(fileURLWithPath: uvPath)
 task.arguments = ["run", "python", "dictate.py"]
@@ -155,7 +155,7 @@ task.currentDirectoryURL = projectDir
 task.standardOutput = childLog
 task.standardError = childLog
 
-// PATH fuer den Child setzen, falls uv weitere Tools sucht.
+// Set PATH for the child in case uv needs to resolve further tools.
 var env = ProcessInfo.processInfo.environment
 let homeBin = NSString(string: "~/.local/bin").expandingTildeInPath
 let extraPaths = "\(homeBin):/opt/homebrew/bin:/usr/local/bin"
@@ -166,10 +166,10 @@ do {
     try task.run()
     log("Child PID: \(task.processIdentifier)")
 } catch {
-    log("FEHLER beim Starten: \(error)")
+    log("ERROR starting child: \(error)")
     exit(1)
 }
 
 task.waitUntilExit()
-log("Child beendet mit Status: \(task.terminationStatus)")
+log("Child exited with status: \(task.terminationStatus)")
 exit(task.terminationStatus)

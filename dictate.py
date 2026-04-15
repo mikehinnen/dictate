@@ -420,7 +420,7 @@ class Dictation:
 # ============================================================================
 
 def _hotkey_spec() -> str:
-    """Builds pynput's HotKey-parse string from HOTKEY_MODIFIERS + TRIGGER."""
+    """Human-readable hotkey description (for log / status prints)."""
     parts: list[str] = []
     if Key.cmd in HOTKEY_MODIFIERS:
         parts.append("<cmd>")
@@ -431,20 +431,133 @@ def _hotkey_spec() -> str:
     if Key.alt in HOTKEY_MODIFIERS:
         parts.append("<alt>")
     trigger_char = getattr(HOTKEY_TRIGGER, "char", None)
-    if trigger_char is None:
-        raise RuntimeError("HOTKEY_TRIGGER must be a character KeyCode")
-    parts.append(trigger_char)
+    if trigger_char is not None:
+        parts.append(trigger_char)
     return "+".join(parts)
 
 
-def run_listener(dictation: Dictation) -> None:
-    # Why HotKey + canonical() and not our own modifier-tracking?
-    # On German QWERTZ, Shift+9 produces "(" -- a plain char equality
-    # against "9" would never match, which is exactly the bug that made
-    # ⌘⇧9 silently do nothing. pynput's `listener.canonical(key)` maps
-    # the physical key back to its layout-independent form, so modifier
-    # combos work across keyboard layouts.
+# macOS virtual key codes for common trigger characters. Stable across
+# keyboard layouts -- vk is a physical-key identifier, not a character.
+_MACOS_VK: dict[str, int] = {
+    # Number row (also matches their shifted symbols on QWERTZ/QWERTY)
+    "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22,
+    "7": 26, "8": 28, "9": 25, "0": 29,
+    # Common letters
+    "a": 0, "b": 11, "c": 8, "d": 2, "e": 14, "f": 3, "g": 5, "h": 4,
+    "i": 34, "j": 38, "k": 40, "l": 37, "m": 46, "n": 45, "o": 31,
+    "p": 35, "q": 12, "r": 15, "s": 1, "t": 17, "u": 32, "v": 9,
+    "w": 13, "x": 7, "y": 16, "z": 6,
+    # Space / punctuation
+    " ": 49, ".": 47, ",": 43,
+}
 
+
+def run_listener(dictation: Dictation) -> None:
+    """Global hotkey listener with event suppression.
+
+    Uses pynput's darwin_intercept (macOS-only Quartz hook) to both
+    detect our hotkey AND suppress the event from reaching the focused
+    app. Without suppression, the focused app receives ⌘⇧9 and, if it
+    has no binding for it, macOS plays the system alert sound -- that's
+    the "beep" users hear on every dictation trigger.
+
+    Matching is by virtual-key-code + modifier mask, which is
+    layout-independent (the physical "9" key has vk=25 on every
+    US/DE/FR/etc. Mac keyboard). This also fixes the earlier German
+    QWERTZ bug where Shift+9 produces "(" as char.
+    """
+    try:
+        from Quartz import (  # type: ignore[import-not-found]
+            CGEventGetIntegerValueField,
+            CGEventGetFlags,
+            kCGKeyboardEventKeycode,
+            kCGEventFlagMaskCommand,
+            kCGEventFlagMaskShift,
+            kCGEventFlagMaskControl,
+            kCGEventFlagMaskAlternate,
+        )
+    except ImportError as e:  # noqa: BLE001
+        print(
+            f"[hotkey] Quartz unavailable ({e}); hotkey will not be "
+            "suppressed -- focused app may beep on every press.",
+            file=sys.stderr,
+        )
+        _run_listener_fallback(dictation)
+        return
+
+    trigger_char = getattr(HOTKEY_TRIGGER, "char", None)
+    trigger_vk = _MACOS_VK.get(trigger_char or "")
+    if trigger_vk is None:
+        print(
+            f"[hotkey] no vk mapping for trigger {trigger_char!r}; "
+            "falling back to char-based Listener (no suppression).",
+            file=sys.stderr,
+        )
+        _run_listener_fallback(dictation)
+        return
+
+    # Build required + relevant modifier masks.
+    required_flags = 0
+    if Key.cmd in HOTKEY_MODIFIERS:
+        required_flags |= kCGEventFlagMaskCommand
+    if Key.shift in HOTKEY_MODIFIERS:
+        required_flags |= kCGEventFlagMaskShift
+    if Key.ctrl in HOTKEY_MODIFIERS:
+        required_flags |= kCGEventFlagMaskControl
+    if Key.alt in HOTKEY_MODIFIERS:
+        required_flags |= kCGEventFlagMaskAlternate
+    # Mask of ALL modifier bits we care about -- lets us require an
+    # EXACT modifier match (extra modifiers like alt shouldn't trigger).
+    modifier_mask = (
+        kCGEventFlagMaskCommand
+        | kCGEventFlagMaskShift
+        | kCGEventFlagMaskControl
+        | kCGEventFlagMaskAlternate
+    )
+
+    KEY_DOWN = 10  # kCGEventKeyDown
+    KEY_UP = 11    # kCGEventKeyUp
+
+    # Avoid firing repeatedly while the key is auto-repeating.
+    hotkey_down = [False]
+
+    import os
+    trace = os.environ.get("DICTATE_KEY_TRACE") == "1"
+
+    def darwin_intercept(event_type, event):
+        try:
+            keycode = CGEventGetIntegerValueField(event, kCGKeyboardEventKeycode)
+            flags = CGEventGetFlags(event)
+            modifiers = flags & modifier_mask
+            is_hotkey = (keycode == trigger_vk and modifiers == required_flags)
+            if trace and event_type in (KEY_DOWN, KEY_UP):
+                print(
+                    f"[hotkey] type={event_type} vk={keycode} "
+                    f"mods=0x{modifiers:x} hotkey={is_hotkey}",
+                    file=sys.stderr,
+                )
+            if is_hotkey:
+                if event_type == KEY_DOWN and not hotkey_down[0]:
+                    hotkey_down[0] = True
+                    print("[hotkey] combo detected, toggling dictation")
+                    dictation.toggle()
+                elif event_type == KEY_UP:
+                    hotkey_down[0] = False
+                return None  # suppress -- don't propagate to focused app
+        except Exception as e:  # noqa: BLE001
+            print(f"[hotkey] intercept error: {e}", file=sys.stderr)
+        return event
+
+    spec = _hotkey_spec()
+    print(f"[hotkey] listener starting (suppressing); waiting for {spec}")
+    with Listener(darwin_intercept=darwin_intercept) as _listener:
+        print("[hotkey] listener running")
+        _listener.join()
+
+
+def _run_listener_fallback(dictation: Dictation) -> None:
+    """Listener without event suppression -- used only when Quartz isn't
+    importable. Focused app will still receive the hotkey and may beep."""
     def on_activate() -> None:
         print("[hotkey] combo detected, toggling dictation")
         dictation.toggle()
@@ -452,30 +565,14 @@ def run_listener(dictation: Dictation) -> None:
     spec = _hotkey_spec()
     hotkey = HotKey(HotKey.parse(spec), on_activate)
 
-    # Debug: count key events so we can confirm the listener is alive.
-    # DICTATE_KEY_TRACE=1 logs every canonical keypress to stderr
-    # (diagnostic only -- leaks keystrokes; only enable while debugging).
-    import os
-    trace = os.environ.get("DICTATE_KEY_TRACE") == "1"
-
     def for_canonical(handler):
-        def wrapped(k):
-            try:
-                canonical = listener.canonical(k)
-            except Exception as e:  # noqa: BLE001
-                print(f"[hotkey] canonical() error: {e}", file=sys.stderr)
-                return
-            if trace:
-                print(f"[hotkey] key={k!r} canonical={canonical!r}", file=sys.stderr)
-            handler(canonical)
-        return wrapped
+        return lambda k: handler(listener.canonical(k))
 
-    print(f"[hotkey] listener starting; waiting for {spec}")
+    print(f"[hotkey] listener starting (fallback, no suppression); waiting for {spec}")
     with Listener(
         on_press=for_canonical(hotkey.press),
         on_release=for_canonical(hotkey.release),
     ) as listener:
-        print("[hotkey] listener running")
         listener.join()
 
 

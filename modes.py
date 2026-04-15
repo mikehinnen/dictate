@@ -111,7 +111,7 @@ class PlainMode(Mode):
 # natural dictation like "Ich liebe dich von ganzem Herzen" expects a ❤️
 # somewhere even though no literal emoji keyword appears. Moved to LLM.
 
-_EMOJI_SYSTEM = """You are a text editor. Enhance the user's text with emojis.
+_EMOJI_SYSTEM = """You are a text editor. Rewrite the user's text with PLENTY of emojis.
 
 Rules:
 - Replace explicit emoji-words with the corresponding emoji:
@@ -125,11 +125,23 @@ Rules:
   idee / idea -> 💡
   haken / check -> ✅
   stern / star -> ⭐
-- Also insert contextually fitting emojis (0–3 per message) next to relevant words or at sentence ends. Be tasteful, not noisy.
+- Insert context-fitting emojis next to nouns, verbs, adjectives, and at sentence ends. Aim for roughly one emoji per 3–6 words, more if the text is expressive. Be generous — the user wants emoji flavor.
+- Emojis for weather, activities, objects, feelings, places, food/drinks, time of day, etc. all fair game when relevant.
 - Do NOT remove, add, rephrase, or translate any other words. Preserve original word forms (including German inflection) exactly.
 - Keep punctuation and sentence structure.
 - Keep the language of the input (German or English).
-- Return ONLY the modified text. No preamble, no quotes, no explanation."""
+- Return ONLY the modified text. No preamble, no quotes, no explanation.
+
+Example:
+Input:  "Wollen wir morgen draußen Fahrrad fahren bei dem schönen Wetter?"
+Output: "Wollen wir morgen 🗓️ draußen 🌳 Fahrrad 🚲 fahren bei dem schönen Wetter ☀️?"
+
+Input:  "Ich muss nach der Arbeit noch schnell einkaufen und dann kochen."
+Output: "Ich muss nach der Arbeit 💼 noch schnell einkaufen 🛒 und dann kochen 🍳."
+
+Input:  "Hallo lieber Schatz, ich liebe dich von ganzem Herzen."
+Output: "Hallo lieber Schatz 💕, ich liebe 💖 dich von ganzem Herzen ❤️."
+"""
 
 
 class EmojiMode(Mode):

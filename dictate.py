@@ -420,10 +420,12 @@ class DictateApp(rumps.App):
         )
 
         # ---- Menue aufbauen ----
+        # Kein key= mehr: NSStatusItem-Menues feuern keyEquivalents nur
+        # waehrend das Menu offen ist. Der globale Hotkey ist ⌘⇧9 (pynput).
+        # Stattdessen den Hotkey direkt im Titel anzeigen.
         self._toggle_item = rumps.MenuItem(
-            "Aufnahme starten",
+            f"Aufnahme starten  ({_hotkey_label()})",
             callback=self._on_toggle_clicked,
-            key="d",
         )
 
         # Verlauf: fixe Anzahl Platzhalter, wir updaten nur Titel + Callback.
@@ -467,7 +469,7 @@ class DictateApp(rumps.App):
             menu += [None, self._login_item]
         menu += [
             None,
-            rumps.MenuItem(f"Hotkey: {_hotkey_label()}"),
+            # Hotkey steht direkt im Toggle-Item -- Info-Zeile waere Doppelung.
             rumps.MenuItem(f"Modell: {MODEL.split('/')[-1]}"),
             None,
             rumps.MenuItem(
@@ -521,12 +523,13 @@ class DictateApp(rumps.App):
             self.icon = None
             self.title = emoji
 
+        hk = _hotkey_label()
         if state == "recording":
-            self._toggle_item.title = "Aufnahme stoppen"
+            self._toggle_item.title = f"Aufnahme stoppen  ({hk})"
         elif state == "transcribing":
-            self._toggle_item.title = "Abbrechen"
+            self._toggle_item.title = f"Abbrechen  ({hk})"
         else:
-            self._toggle_item.title = "Aufnahme starten"
+            self._toggle_item.title = f"Aufnahme starten  ({hk})"
 
     def _on_state_change(self, state: str) -> None:
         # rumps-Property-Updates aus Worker-Threads funktionieren fuer

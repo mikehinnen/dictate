@@ -39,7 +39,7 @@ from typing import Callable
 import numpy as np
 import rumps
 import sounddevice as sd
-from pynput.keyboard import Controller, Key, KeyCode, Listener
+from pynput.keyboard import Controller, HotKey, Key, KeyCode, Listener
 
 # ============================================================================
 # Configuration
@@ -353,32 +353,42 @@ class Dictation:
 # Hotkey listener
 # ============================================================================
 
-def _normalize(key) -> object:
-    if key in (Key.cmd_l, Key.cmd_r):
-        return Key.cmd
-    if key in (Key.shift_l, Key.shift_r):
-        return Key.shift
-    if key in (Key.ctrl_l, Key.ctrl_r):
-        return Key.ctrl
-    if key in (Key.alt_l, Key.alt_r):
-        return Key.alt
-    return key
+def _hotkey_spec() -> str:
+    """Builds pynput's HotKey-parse string from HOTKEY_MODIFIERS + TRIGGER."""
+    parts: list[str] = []
+    if Key.cmd in HOTKEY_MODIFIERS:
+        parts.append("<cmd>")
+    if Key.shift in HOTKEY_MODIFIERS:
+        parts.append("<shift>")
+    if Key.ctrl in HOTKEY_MODIFIERS:
+        parts.append("<ctrl>")
+    if Key.alt in HOTKEY_MODIFIERS:
+        parts.append("<alt>")
+    trigger_char = getattr(HOTKEY_TRIGGER, "char", None)
+    if trigger_char is None:
+        raise RuntimeError("HOTKEY_TRIGGER must be a character KeyCode")
+    parts.append(trigger_char)
+    return "+".join(parts)
 
 
 def run_listener(dictation: Dictation) -> None:
-    pressed: set = set()
+    # Why HotKey + canonical() and not our own modifier-tracking?
+    # On German QWERTZ, Shift+9 produces "(" -- a plain char equality
+    # against "9" would never match, which is exactly the bug that made
+    # ⌘⇧9 silently do nothing. pynput's `listener.canonical(key)` maps
+    # the physical key back to its layout-independent form, so modifier
+    # combos work across keyboard layouts.
+    hotkey = HotKey(HotKey.parse(_hotkey_spec()), dictation.toggle)
 
-    def on_press(key) -> None:
-        k = _normalize(key)
-        pressed.add(k)
-        if HOTKEY_MODIFIERS.issubset(pressed) and k == HOTKEY_TRIGGER:
-            dictation.toggle()
+    def for_canonical(handler):
+        # Late binding: `listener` is the name introduced by `as listener`
+        # in the with-statement below; the lambda resolves it at call time.
+        return lambda k: handler(listener.canonical(k))
 
-    def on_release(key) -> None:
-        k = _normalize(key)
-        pressed.discard(k)
-
-    with Listener(on_press=on_press, on_release=on_release) as listener:
+    with Listener(
+        on_press=for_canonical(hotkey.press),
+        on_release=for_canonical(hotkey.release),
+    ) as listener:
         listener.join()
 
 

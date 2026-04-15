@@ -160,6 +160,9 @@ var env = ProcessInfo.processInfo.environment
 let homeBin = NSString(string: "~/.local/bin").expandingTildeInPath
 let extraPaths = "\(homeBin):/opt/homebrew/bin:/usr/local/bin"
 env["PATH"] = (env["PATH"] ?? "") + ":" + extraPaths
+// Python stdout/stderr are block-buffered when redirected to a file.
+// Unbuffered = every print() lands in the log immediately.
+env["PYTHONUNBUFFERED"] = "1"
 task.environment = env
 
 do {

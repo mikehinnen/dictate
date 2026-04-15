@@ -194,6 +194,23 @@ def insert_text(text: str) -> None:
 
 
 # ============================================================================
+# Permission diagnostics
+# ============================================================================
+
+def check_accessibility_permission() -> bool | None:
+    """Returns True if Accessibility is granted, False if not, None if the
+    check API is unavailable. Accessibility is required for simulating ⌘V
+    via pynput.Controller (paste-after-transcription).
+    """
+    try:
+        from ApplicationServices import AXIsProcessTrusted  # type: ignore[import-not-found]
+        return bool(AXIsProcessTrusted())
+    except Exception as e:  # noqa: BLE001
+        print(f"[permissions] Accessibility check unavailable: {e}", file=sys.stderr)
+        return None
+
+
+# ============================================================================
 # Sound feedback
 # ============================================================================
 
@@ -534,6 +551,20 @@ class DictateApp(rumps.App):
         print(f"[app] Menubar app started. Hotkey: {_hotkey_label()}")
         print(f"[app] Login item status: {initial_status}")
         print(f"[app] Icons: {'PNG' if self._use_png_icons else 'emoji'}")
+
+        # Accessibility permission diagnostic -- needed to simulate ⌘V.
+        # Without it, the paste-after-transcription silently no-ops.
+        ax = check_accessibility_permission()
+        if ax is True:
+            print("[permissions] Accessibility: granted (paste will work)")
+        elif ax is False:
+            print(
+                "[permissions] Accessibility: MISSING -- paste will silently "
+                "fail. Fix: System Settings > Privacy & Security > "
+                "Accessibility, add Dictate.app, toggle on, restart app."
+            )
+        else:
+            print("[permissions] Accessibility: unable to verify")
 
     # ---------- Appearance ----------
 

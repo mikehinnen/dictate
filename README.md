@@ -11,8 +11,10 @@ Double-click `Dictate.app` → 🎙 icon appears in the menu bar (top right).
 |---|---|
 | Start/stop recording | Hotkey `⌘⇧9` **or** click 🎙 → "Start recording" |
 | Cancel transcription | Press the hotkey again while ⏳ is running — result is discarded |
+| Pick a post-processing mode | 🎙 → "Mode" → Plain / Emoji / Polish / Friendly |
 | Switch language | 🎙 → "Language" → German / English / Auto-detect |
 | Copy a past transcription | 🎙 → "History" → click entry (text is put on the clipboard) |
+| Toggle start/stop sounds | 🎙 → "Play sounds" (off by default) |
 | Launch at login | 🎙 → "Launch at login" (checkbox) |
 | See state | Icon: 🎙 idle · 🔴 recording · ⏳ transcribing |
 | Quit | 🎙 → "Quit" (or `⌘Q` while the menu is open) |
@@ -23,6 +25,28 @@ appears.
 
 **History entries don't auto-paste** — clicking them just copies the text to
 the clipboard so you can `⌘V` it wherever you want.
+
+## Modes (post-processing)
+
+Between Whisper's raw transcription and the paste, you can apply a
+transformation. Pick one under 🎙 → "Mode":
+
+| Mode | What it does | Backend |
+|---|---|---|
+| **Plain** | Paste the raw transcription (default). | none |
+| **Emoji** | Replace spoken keywords with emoji — "daumen hoch" → 👍, "feuer" → 🔥, "idee" → 💡, "party" → 🎉. German + English. | Rule-based, offline, instant |
+| **Polish** | Clean up dictated speech into polished written text: fix grammar, strip fillers (ähm, halt, also), keep language. | Local LLM |
+| **Friendly** | Soften angry / confrontational text into a more diplomatic version, keeping the core message. | Local LLM |
+
+The LLM used for Polish and Friendly is
+`mlx-community/Llama-3.2-3B-Instruct-4bit` (~2 GB, runs on Apple Silicon
+via MLX). It **downloads lazily on first use** — the first Polish or
+Friendly transcription will block for a minute or two while the model
+fetches into the HuggingFace cache (`~/.cache/huggingface/hub/`), after
+that it's ~1–2 s per transformation. Plain and Emoji never touch the
+LLM.
+
+Everything is offline — no cloud calls for any mode.
 
 ## First-time setup
 

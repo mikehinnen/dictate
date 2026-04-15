@@ -41,6 +41,8 @@ import rumps
 import sounddevice as sd
 from pynput.keyboard import Controller, HotKey, Key, KeyCode, Listener
 
+from modes import MODES, Mode, safe_transform
+
 # ============================================================================
 # Configuration
 # ============================================================================
@@ -310,6 +312,8 @@ class Dictation:
         state_callback: Callable[[str], None],
         language_getter: Callable[[], str | None],
         history_callback: Callable[[str], None],
+        mode_getter: Callable[[], Mode],
+        sounds_getter: Callable[[], bool],
     ) -> None:
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -319,6 +323,13 @@ class Dictation:
         self._state_callback = state_callback
         self._language_getter = language_getter
         self._history_callback = history_callback
+        self._mode_getter = mode_getter
+        self._sounds_getter = sounds_getter
+
+    def _play(self, path: str) -> None:
+        """Play a system sound only if the user opted in via the menu."""
+        if self._sounds_getter():
+            play_sound(path)
 
     @property
     def state(self) -> str:
@@ -343,7 +354,7 @@ class Dictation:
     def _start(self) -> None:
         self._stop_event = threading.Event()
         self._cancel_event = threading.Event()
-        play_sound(SOUND_START)
+        self._play(SOUND_START)
         print("[rec] Recording started.")
         self._emit("recording")
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -356,7 +367,7 @@ class Dictation:
     def _cancel(self) -> None:
         print("[rec] Cancel during transcription.")
         self._cancel_event.set()
-        play_sound(SOUND_CANCEL)
+        self._play(SOUND_CANCEL)
         # UI goes back to idle immediately; the transcription thread keeps
         # running in the background but its result is discarded.
         self._emit("idle")
@@ -364,7 +375,7 @@ class Dictation:
     def _run(self) -> None:
         try:
             audio = record_audio(self._stop_event)
-            play_sound(SOUND_STOP)
+            self._play(SOUND_STOP)
             if self._cancel_event.is_set():
                 print("[rec] Cancelled before transcription.")
                 return
@@ -374,11 +385,25 @@ class Dictation:
                 print("[rec] Too short, ignoring.")
                 return
             self._emit("transcribing")
-            text = transcribe(audio, self._language_getter())
+            raw = transcribe(audio, self._language_getter())
             if self._cancel_event.is_set():
-                print(f"[rec] Result discarded (cancelled): {text!r}")
+                print(f"[rec] Result discarded (cancelled): {raw!r}")
                 return
-            print(f"[text] {text!r}")
+            print(f"[text] (raw) {raw!r}")
+
+            # Apply mode transform (Plain is a no-op)
+            mode = self._mode_getter()
+            if raw and mode.id != "plain":
+                print(f"[mode] applying {mode.id}")
+                text = safe_transform(mode, raw)
+                print(f"[mode] ({mode.id}) -> {text!r}")
+            else:
+                text = raw
+
+            if self._cancel_event.is_set():
+                print(f"[rec] Result discarded (cancelled post-mode): {text!r}")
+                return
+
             if text:
                 self._history_callback(text)
                 insert_text(text)
@@ -485,6 +510,8 @@ class DictateApp(rumps.App):
         super().__init__(ICON_IDLE_EMOJI, quit_button=None)
 
         self._language: str | None = DEFAULT_LANGUAGE
+        self._mode: Mode = MODES[0]  # Plain by default
+        self._sounds_enabled: bool = False  # off by default (user preference)
         self._history: deque[str] = deque(maxlen=HISTORY_SIZE)
         self._use_png_icons = all(
             p.exists()
@@ -521,6 +548,24 @@ class DictateApp(rumps.App):
             self._language_items[code] = item
             language_menu.add(item)
 
+        # Mode (post-processing)
+        self._mode_items: dict[str, rumps.MenuItem] = {}
+        mode_menu = rumps.MenuItem("Mode")
+        for mode in MODES:
+            item = rumps.MenuItem(
+                mode.label, callback=self._make_mode_setter(mode)
+            )
+            if mode.id == self._mode.id:
+                item.state = 1
+            self._mode_items[mode.id] = item
+            mode_menu.add(item)
+
+        # Sounds toggle
+        self._sounds_item = rumps.MenuItem(
+            "Play sounds", callback=self._on_sounds_toggle
+        )
+        self._sounds_item.state = 1 if self._sounds_enabled else 0
+
         # Login Item (only if the launcher can service it)
         self._login_item: rumps.MenuItem | None = None
         initial_status = login_item_status()
@@ -535,10 +580,13 @@ class DictateApp(rumps.App):
             self._toggle_item,
             None,
             self._history_menu,
+            mode_menu,
             language_menu,
+            None,
+            self._sounds_item,
         ]
         if self._login_item is not None:
-            menu += [None, self._login_item]
+            menu += [self._login_item]
         menu += [
             None,
             # The global hotkey is already shown in the toggle item; an info
@@ -556,6 +604,8 @@ class DictateApp(rumps.App):
             state_callback=self._on_state_change,
             language_getter=lambda: self._language,
             history_callback=self._add_to_history,
+            mode_getter=lambda: self._mode,
+            sounds_getter=lambda: self._sounds_enabled,
         )
         self._listener_thread = threading.Thread(
             target=run_listener, args=(self.dictation,), daemon=True
@@ -666,6 +716,19 @@ class DictateApp(rumps.App):
             label = {"de": "German", "en": "English", None: "Auto"}.get(code, str(code))
             print(f"[lang] switched to {label} ({code!r})")
         return handler
+
+    def _make_mode_setter(self, mode: Mode):
+        def handler(_sender) -> None:
+            self._mode = mode
+            for mid, item in self._mode_items.items():
+                item.state = 1 if mid == mode.id else 0
+            print(f"[mode] switched to {mode.id}")
+        return handler
+
+    def _on_sounds_toggle(self, sender) -> None:
+        self._sounds_enabled = sender.state == 0  # currently off -> turn on
+        sender.state = 1 if self._sounds_enabled else 0
+        print(f"[sounds] {'enabled' if self._sounds_enabled else 'disabled'}")
 
     def _on_login_toggle(self, sender) -> None:
         assert self._login_item is not None

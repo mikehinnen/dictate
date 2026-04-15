@@ -210,6 +210,30 @@ def check_accessibility_permission() -> bool | None:
         return None
 
 
+def check_input_monitoring_permission() -> bool | None:
+    """Returns True if Input Monitoring (kTCCServiceListenEvent) is granted,
+    False if denied/unknown, None if the check API is unavailable.
+
+    Input Monitoring is a separate TCC category from Accessibility and must
+    be granted for pynput's Listener to receive real key events -- without
+    it, CGEventTap delivers stripped events (vk=0) and no hotkey can match.
+    """
+    try:
+        import ctypes
+        iokit = ctypes.CDLL(
+            "/System/Library/Frameworks/IOKit.framework/IOKit"
+        )
+        iokit.IOHIDCheckAccess.restype = ctypes.c_uint32
+        iokit.IOHIDCheckAccess.argtypes = [ctypes.c_uint32]
+        # kIOHIDRequestTypeListenEvent = 1
+        # Return: 0 = granted, 1 = denied, 2 = unknown
+        result = iokit.IOHIDCheckAccess(1)
+        return result == 0
+    except Exception as e:  # noqa: BLE001
+        print(f"[permissions] Input Monitoring check unavailable: {e}", file=sys.stderr)
+        return None
+
+
 # ============================================================================
 # Sound feedback
 # ============================================================================
@@ -553,7 +577,7 @@ class DictateApp(rumps.App):
         print(f"[app] Icons: {'PNG' if self._use_png_icons else 'emoji'}")
 
         # Accessibility permission diagnostic -- needed to simulate ⌘V.
-        # Without it, the paste-after-transcription silently no-ops.
+        # Without it, paste-after-transcription silently no-ops.
         ax = check_accessibility_permission()
         if ax is True:
             print("[permissions] Accessibility: granted (paste will work)")
@@ -565,6 +589,22 @@ class DictateApp(rumps.App):
             )
         else:
             print("[permissions] Accessibility: unable to verify")
+
+        # Input Monitoring diagnostic -- needed for the global hotkey
+        # listener. Without it, key events come through stripped (vk=0)
+        # and HotKey never matches.
+        im = check_input_monitoring_permission()
+        if im is True:
+            print("[permissions] Input Monitoring: granted (hotkey will fire)")
+        elif im is False:
+            print(
+                "[permissions] Input Monitoring: MISSING -- the global "
+                "hotkey will silently not fire. Fix: System Settings > "
+                "Privacy & Security > Input Monitoring, add Dictate.app, "
+                "toggle on, restart app."
+            )
+        else:
+            print("[permissions] Input Monitoring: unable to verify")
 
     # ---------- Appearance ----------
 

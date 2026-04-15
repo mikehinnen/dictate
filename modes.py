@@ -17,7 +17,6 @@ first use of a mode that needs it. No cloud calls.
 
 from __future__ import annotations
 
-import re
 import sys
 from typing import ClassVar
 
@@ -104,85 +103,43 @@ class PlainMode(Mode):
 
 
 # ============================================================================
-# Emoji -- literal keyword → emoji, rule-based, offline
+# Emoji -- contextual emoji insertion via LLM
 # ============================================================================
 
-# German + English common emoji triggers. Order does not matter at define
-# time -- we sort by keyword length (desc) at match time so multi-word
-# phrases win over their single-word substrings.
-EMOJI_MAP: dict[str, str] = {
-    # German reactions
-    "daumen hoch": "👍",
-    "daumen runter": "👎",
-    "daumen unten": "👎",
-    "herz": "❤️",
-    "haken": "✅",
-    "häkchen": "✅",
-    "stern": "⭐",
-    "feuer": "🔥",
-    "hundert prozent": "💯",
-    "party": "🎉",
-    "konfetti": "🎉",
-    "lachen": "😄",
-    "lach": "😄",
-    "traurig": "😢",
-    "weinen": "😭",
-    "wütend": "😠",
-    "sauer": "😠",
-    "nachdenklich": "🤔",
-    "rakete": "🚀",
-    "glühbirne": "💡",
-    "idee": "💡",
-    "bombe": "💥",
-    "ziel": "🎯",
-    "kaffee": "☕",
-    "bier": "🍺",
-    "pizza": "🍕",
-    "frage": "❓",
-    "ausrufezeichen": "❗",
-    "pfeil rechts": "➡️",
-    "pfeil links": "⬅️",
-    "pfeil hoch": "⬆️",
-    "pfeil runter": "⬇️",
-    # English reactions
-    "thumbs up": "👍",
-    "thumbs down": "👎",
-    "heart": "❤️",
-    "check mark": "✅",
-    "star": "⭐",
-    "fire": "🔥",
-    "hundred percent": "💯",
-    "rocket": "🚀",
-    "idea": "💡",
-    "target": "🎯",
-    "coffee": "☕",
-    "beer": "🍺",
-    "question mark": "❓",
-    "exclamation mark": "❗",
-    "laughing": "😄",
-    "crying": "😭",
-    "angry": "😠",
-    "thinking": "🤔",
-}
+# Earlier iteration was rule-based (keyword -> emoji dict). Didn't survive
+# real use: German inflection means "herz" doesn't match "Herzen", and
+# natural dictation like "Ich liebe dich von ganzem Herzen" expects a ❤️
+# somewhere even though no literal emoji keyword appears. Moved to LLM.
+
+_EMOJI_SYSTEM = """You are a text editor. Enhance the user's text with emojis.
+
+Rules:
+- Replace explicit emoji-words with the corresponding emoji:
+  daumen hoch / thumbs up -> 👍
+  daumen runter / thumbs down -> 👎
+  herz / heart -> ❤️
+  feuer / fire -> 🔥
+  lachen / laughing -> 😄
+  rakete / rocket -> 🚀
+  party -> 🎉
+  idee / idea -> 💡
+  haken / check -> ✅
+  stern / star -> ⭐
+- Also insert contextually fitting emojis (0–3 per message) next to relevant words or at sentence ends. Be tasteful, not noisy.
+- Do NOT remove, add, rephrase, or translate any other words. Preserve original word forms (including German inflection) exactly.
+- Keep punctuation and sentence structure.
+- Keep the language of the input (German or English).
+- Return ONLY the modified text. No preamble, no quotes, no explanation."""
 
 
 class EmojiMode(Mode):
     id = "emoji"
     label = "Emoji"
 
-    def __init__(self) -> None:
-        # Pre-compile one regex with all keywords, longest first, so that
-        # e.g. "daumen hoch" wins over "daumen" (if we ever add the latter).
-        keywords = sorted(EMOJI_MAP.keys(), key=len, reverse=True)
-        pattern = r"\b(" + "|".join(re.escape(k) for k in keywords) + r")\b"
-        self._regex = re.compile(pattern, flags=re.IGNORECASE)
-
-    def _replace(self, match: re.Match[str]) -> str:
-        keyword = match.group(0).lower()
-        return EMOJI_MAP.get(keyword, match.group(0))
-
     def transform(self, text: str) -> str:
-        return self._regex.sub(self._replace, text)
+        # Headroom: each word might get an emoji appended. 4x tokens covers it.
+        max_tokens = max(128, len(text.split()) * 4)
+        return run_llm(_EMOJI_SYSTEM, text, max_tokens=max_tokens)
 
 
 # ============================================================================

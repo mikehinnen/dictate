@@ -34,17 +34,16 @@ transformation. Pick one under 🎙 → "Mode":
 | Mode | What it does | Backend |
 |---|---|---|
 | **Plain** | Paste the raw transcription (default). | none |
-| **Emoji** | Replace spoken keywords with emoji — "daumen hoch" → 👍, "feuer" → 🔥, "idee" → 💡, "party" → 🎉. German + English. | Rule-based, offline, instant |
+| **Emoji** | Replace explicit emoji-words (*daumen hoch* → 👍, *herz* → ❤️, …) AND insert context-fitting emojis at natural positions. German + English. | Local LLM |
 | **Polish** | Clean up dictated speech into polished written text: fix grammar, strip fillers (ähm, halt, also), keep language. | Local LLM |
 | **Friendly** | Soften angry / confrontational text into a more diplomatic version, keeping the core message. | Local LLM |
 
-The LLM used for Polish and Friendly is
+The LLM used by Emoji, Polish, and Friendly is
 `mlx-community/Llama-3.2-3B-Instruct-4bit` (~2 GB, runs on Apple Silicon
-via MLX). It **downloads lazily on first use** — the first Polish or
-Friendly transcription will block for a minute or two while the model
-fetches into the HuggingFace cache (`~/.cache/huggingface/hub/`), after
-that it's ~1–2 s per transformation. Plain and Emoji never touch the
-LLM.
+via MLX). It **downloads lazily on first use** — the first LLM-mode
+transcription will block for a minute or two while the model fetches
+into the HuggingFace cache (`~/.cache/huggingface/hub/`), after that
+it's ~1–2 s per transformation. Plain never touches the LLM.
 
 Everything is offline — no cloud calls for any mode.
 

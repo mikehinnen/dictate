@@ -47,6 +47,31 @@ it's ~1–2 s per transformation. Plain never touches the LLM.
 
 Everything is offline — no cloud calls for any mode.
 
+## Privacy — what runs where
+
+Nothing about your audio or text ever leaves the machine during use.
+
+| Step | Where it runs | Uses network? |
+|---|---|---|
+| Microphone capture → audio buffer | Local (CoreAudio) | No |
+| Audio → text (Whisper transcription) | Local (MLX, Apple Silicon) | No |
+| Text → text (Plain mode) | No processing at all | No |
+| Text → text (Emoji / Polish / Friendly modes) | Local LLM (MLX, Apple Silicon) | No |
+| Text → focused app (paste via `⌘V`) | Local (pynput → Quartz) | No |
+
+**The only network activity is one-time downloads** of the two models
+from HuggingFace, cached locally afterwards:
+
+| Model | Size | Downloaded when | Cache location |
+|---|---|---|---|
+| Whisper (`whisper-large-v3-turbo`) | ~1.5 GB | Setup (`--download`) or first recording | `~/.cache/huggingface/hub/models--mlx-community--whisper-*` |
+| LLM (`Llama-3.2-3B-Instruct-4bit`) | ~2 GB | First use of Emoji / Polish / Friendly | `~/.cache/huggingface/hub/models--mlx-community--Llama-*` |
+
+After both are cached, you can cut the network entirely and the app
+keeps working. Quick proof: toggle Wi-Fi off, dictate something, use
+any mode — all good. Watchable with `lsof -i -p $(pgrep -f dictate.py)`
+if you're paranoid.
+
 ## First-time setup
 
 ```sh
@@ -124,6 +149,67 @@ them as template images (auto-adapt to Dark/Light mode):
 Recommended: 22×22 or 44×44 PNG, black on transparent, alpha channel defines
 the shape. macOS inverts them automatically in Dark mode.
 
+## Updates & maintenance
+
+Nothing auto-updates. Everything is pinned and explicit — the
+trade-off: no surprises, but you decide when to refresh.
+
+### Models (Whisper + LLM)
+
+HuggingFace-hub caches the first-downloaded snapshot and reuses it
+forever. To force-refresh:
+
+```sh
+rm -rf ~/.cache/huggingface/hub/models--mlx-community--whisper-large-v3-turbo
+rm -rf ~/.cache/huggingface/hub/models--mlx-community--Llama-3.2-3B-Instruct-4bit
+```
+
+The next app launch (Whisper) / mode use (LLM) re-downloads. Rarely
+needed — the published weights for these specific model IDs change only
+on major fixes.
+
+**Switching to a different model** is just a constant change:
+
+```python
+# dictate.py
+MODEL = "mlx-community/whisper-large-v3-turbo-german-f16"   # DE-finetuned
+
+# modes.py
+LLM_MODEL = "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit"  # bigger, better
+```
+
+Any `mlx-community/*` model on HuggingFace works. Bigger models →
+better output but more RAM + slower inference + larger download.
+
+### Python dependencies
+
+`uv.lock` pins every transitive dep for reproducible builds. Refresh:
+
+```sh
+uv sync --upgrade                # bump every package to the newest
+                                 # version that still satisfies
+                                 # pyproject.toml's constraints
+uv add mlx-lm@latest             # or bump one specific package
+```
+
+Review the resulting `uv.lock` diff before committing.
+
+### The app itself
+
+Standard git workflow — nothing special:
+
+```sh
+cd /Users/hinn/code/claude/dictate
+git pull
+uv sync                          # in case pyproject.toml changed
+bash launcher/build.sh           # ONLY if launcher/Dictate.swift changed
+```
+
+**Heads-up on the Swift rebuild:** it produces a binary with a new
+cdhash, and for unsigned apps macOS TCC treats that as a new identity —
+your Input Monitoring / Accessibility / Microphone grants will silently
+stop applying. See *Troubleshooting* below for the re-add recipe.
+
 ## Logs
 
 `Dictate.app` writes to `~/Library/Logs/Dictate.log`. Live tail:
@@ -157,6 +243,20 @@ Or open `Console.app`.
   shell-script launcher still in the bundle. Fix: `bash launcher/build.sh`,
   then remove the stale entries from the three permission panes (select +
   `−`), restart `Dictate.app`.
+- **Hotkey or paste stopped working after `bash launcher/build.sh`** →
+  rebuilding produces a Mach-O with a fresh cdhash, so TCC considers the
+  grant stale. The "Dictate" entry in Input Monitoring / Accessibility
+  may still look present but be non-functional. Fix: remove the entry
+  (`−`), re-add the current `Dictate.app` (`+`), toggle on, restart the
+  app. Nuclear option: `tccutil reset ListenEvent ch.hinn.dictate &&
+  tccutil reset Accessibility ch.hinn.dictate && tccutil reset Microphone
+  ch.hinn.dictate` followed by manual re-add.
+- **App log shows `[permissions] Accessibility: MISSING` or `Input
+  Monitoring: MISSING`** → exact fix the log describes. Both are
+  separate TCC categories; granting one does not grant the other.
+- **Transcription is always "Vielen Dank." or "Untertitel von der
+  Amara.org-Community"** → Whisper hallucinating on silence or very
+  short audio (<1 s). Speak clearly for 2+ seconds.
 
 ## Terminal mode (fallback / debugging)
 

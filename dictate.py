@@ -41,7 +41,7 @@ import rumps
 import sounddevice as sd
 from pynput.keyboard import Controller, HotKey, Key, KeyCode, Listener
 
-from modes import MODES, Mode, safe_transform
+from modes import MODES, Mode, preload_llm, safe_transform
 
 # ============================================================================
 # Configuration
@@ -385,14 +385,19 @@ class Dictation:
                 print("[rec] Too short, ignoring.")
                 return
             self._emit("transcribing")
-            raw = transcribe(audio, self._language_getter())
+            mode = self._mode_getter()
+            # For Translate, force Whisper to auto-detect the source
+            # language -- otherwise "Language=German + speak English"
+            # produces garbled forced-German transcription before the
+            # LLM ever sees it.
+            lang = None if mode.id == "translate" else self._language_getter()
+            raw = transcribe(audio, lang)
             if self._cancel_event.is_set():
                 print(f"[rec] Result discarded (cancelled): {raw!r}")
                 return
             print(f"[text] (raw) {raw!r}")
 
             # Apply mode transform (Plain is a no-op)
-            mode = self._mode_getter()
             if raw and mode.id != "plain":
                 print(f"[mode] applying {mode.id}")
                 text = safe_transform(mode, raw)
@@ -403,6 +408,11 @@ class Dictation:
             if self._cancel_event.is_set():
                 print(f"[rec] Result discarded (cancelled post-mode): {text!r}")
                 return
+
+            # Swiss German: ß is not used -- collapse to ss/SS. Applied last so
+            # it catches both raw Whisper output and anything the LLM modes
+            # produced (example prompts still contain "draußen", etc.).
+            text = text.replace("ß", "ss").replace("ẞ", "SS")
 
             if text:
                 self._history_callback(text)
@@ -820,6 +830,11 @@ class DictateApp(rumps.App):
             for mid, item in self._mode_items.items():
                 item.state = 1 if mid == mode.id else 0
             print(f"[mode] switched to {mode.id}")
+            # Kick off LLM warmup in the background on first switch to an
+            # LLM-backed mode, so the next recording doesn't eat the cold
+            # start (~10 s model load, or a ~2 GB download on first run).
+            if mode.id != "plain":
+                threading.Thread(target=preload_llm, daemon=True).start()
         return handler
 
     def _on_sounds_toggle(self, sender) -> None:

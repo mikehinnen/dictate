@@ -7,9 +7,6 @@ runtime via the menubar and are mutually exclusive.
 
 Built-in modes:
     Plain     -- no transformation (default)
-    Emoji     -- inserts contextual emoji (LLM)
-    Polish    -- converts spoken/dictated text to written text (LLM)
-    Friendly  -- softens the tone of rage/angry text (LLM)
     Translate -- translates any source language to English (LLM)
 
 LLM backend: mlx-lm with a local 4-bit model (~2 GB). Downloads lazily on
@@ -25,7 +22,7 @@ from typing import ClassVar
 # Local LLM (lazy-loaded, shared across LLM-backed modes)
 # ============================================================================
 
-LLM_MODEL = "mlx-community/Llama-3.2-3B-Instruct-4bit"
+LLM_MODEL = "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit"
 
 _llm_model = None
 _llm_tokenizer = None
@@ -121,100 +118,6 @@ class PlainMode(Mode):
 
 
 # ============================================================================
-# Emoji -- contextual emoji insertion via LLM
-# ============================================================================
-
-# Earlier iteration was rule-based (keyword -> emoji dict). Didn't survive
-# real use: German inflection means "herz" doesn't match "Herzen", and
-# natural dictation like "Ich liebe dich von ganzem Herzen" expects a ❤️
-# somewhere even though no literal emoji keyword appears. Moved to LLM.
-
-_EMOJI_SYSTEM = """You are a text editor. Rewrite the user's text with PLENTY of emojis.
-
-Rules:
-- Replace explicit emoji-words with the corresponding emoji:
-  daumen hoch / thumbs up -> 👍
-  daumen runter / thumbs down -> 👎
-  herz / heart -> ❤️
-  feuer / fire -> 🔥
-  lachen / laughing -> 😄
-  rakete / rocket -> 🚀
-  party -> 🎉
-  idee / idea -> 💡
-  haken / check -> ✅
-  stern / star -> ⭐
-- Insert context-fitting emojis next to nouns, verbs, adjectives, and at sentence ends. Aim for roughly one emoji per 3–6 words, more if the text is expressive. Be generous — the user wants emoji flavor.
-- Emojis for weather, activities, objects, feelings, places, food/drinks, time of day, etc. all fair game when relevant.
-- Do NOT remove, add, rephrase, or translate any other words. Preserve original word forms (including German inflection) exactly.
-- Keep punctuation and sentence structure.
-- Keep the language of the input (German or English).
-- Return ONLY the modified text. No preamble, no quotes, no explanation.
-
-Example:
-Input:  "Wollen wir morgen draussen Fahrrad fahren bei dem schönen Wetter?"
-Output: "Wollen wir morgen 🗓️ draussen 🌳 Fahrrad 🚲 fahren bei dem schönen Wetter ☀️?"
-
-Input:  "Ich muss nach der Arbeit noch schnell einkaufen und dann kochen."
-Output: "Ich muss nach der Arbeit 💼 noch schnell einkaufen 🛒 und dann kochen 🍳."
-
-Input:  "Hallo lieber Schatz, ich liebe dich von ganzem Herzen."
-Output: "Hallo lieber Schatz 💕, ich liebe 💖 dich von ganzem Herzen ❤️."
-"""
-
-
-class EmojiMode(Mode):
-    id = "emoji"
-    label = "Emoji"
-
-    def transform(self, text: str) -> str:
-        return run_llm(_EMOJI_SYSTEM, text, max_tokens=self._max_tokens(text))
-
-
-# ============================================================================
-# Polish -- spoken → written, via LLM
-# ============================================================================
-
-_POLISH_SYSTEM = """You are a text polisher. The user dictated the message below into a speech-to-text engine. Convert the raw transcription into polished written text.
-
-Rules:
-- Fix grammar, capitalization, and punctuation.
-- Remove filler words and hesitations (um, uh, ähm, äh, halt, also, eigentlich, ja, you know).
-- Preserve the meaning, register, and language (German or English) EXACTLY as the input. If the input is German, the output must be German.
-- Do NOT add new content, rephrase substantially, translate, or summarize.
-- Return ONLY the polished text. No preamble, no quotes, no meta-commentary."""
-
-
-class PolishMode(Mode):
-    id = "polish"
-    label = "Polish (spoken → written)"
-
-    def transform(self, text: str) -> str:
-        return run_llm(_POLISH_SYSTEM, text, max_tokens=self._max_tokens(text))
-
-
-# ============================================================================
-# Friendly -- soften rage / harsh tone
-# ============================================================================
-
-_FRIENDLY_SYSTEM = """You are a diplomatic rewriter. The user wrote the message below when frustrated or angry. Rewrite it to be friendlier, more polite, and less confrontational.
-
-Rules:
-- Keep the core message and information intact.
-- Soften emotional language; remove profanity and insults.
-- Do NOT become sycophantic, overly apologetic, or add fake niceties. Stay natural.
-- Keep the language (German or English) the same as the input.
-- Return ONLY the rewritten text. No preamble, no quotes, no meta-commentary."""
-
-
-class FriendlyMode(Mode):
-    id = "friendly"
-    label = "Friendly (soften tone)"
-
-    def transform(self, text: str) -> str:
-        return run_llm(_FRIENDLY_SYSTEM, text, max_tokens=self._max_tokens(text))
-
-
-# ============================================================================
 # Translate -- any language → English, via LLM
 # ============================================================================
 
@@ -259,9 +162,6 @@ class TranslateMode(Mode):
 
 MODES: list[Mode] = [
     PlainMode(),
-    EmojiMode(),
-    PolishMode(),
-    FriendlyMode(),
     TranslateMode(),
 ]
 

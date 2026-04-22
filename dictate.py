@@ -73,7 +73,7 @@ PASTE_DELAY_BEFORE = 0.05
 PASTE_DELAY_AFTER = 0.40  # generous: slow apps (Slack, Notion) need this
 
 # Emoji fallback for the menubar icon (used when no PNGs are bundled).
-ICON_IDLE_EMOJI = "🎙"
+ICON_IDLE_EMOJI = "🎤"
 ICON_RECORDING_EMOJI = "🔴"
 ICON_TRANSCRIBING_EMOJI = "⏳"
 

@@ -5,19 +5,19 @@ No cloud service, no API key — just your microphone and MLX-Whisper.
 
 ## Usage
 
-Double-click `Dictate.app` → 🎙 icon appears in the menu bar (top right).
+Double-click `Dictate.app` → 🎤 icon appears in the menu bar (top right).
 
 | Action | How |
 |---|---|
-| Start/stop recording | Hotkey `⌘⇧9` **or** click 🎙 → "Start recording" |
+| Start/stop recording | Hotkey `⌘⇧9` **or** click 🎤 → "Start recording" |
 | Cancel transcription | Press the hotkey again while ⏳ is running — result is discarded |
-| Pick a post-processing mode | 🎙 → "Mode" → Plain / Emoji / Polish / Friendly / Translate |
-| Switch language | 🎙 → "Language" → German / English / Auto-detect |
-| Copy a past transcription | 🎙 → "History" → click entry (text is put on the clipboard) |
-| Toggle start/stop sounds | 🎙 → "Play sounds" (off by default) |
-| Launch at login | 🎙 → "Launch at login" (checkbox) |
-| See state | Icon: 🎙 idle · 🔴 recording · ⏳ transcribing |
-| Quit | 🎙 → "Quit" (or `⌘Q` while the menu is open) |
+| Pick a post-processing mode | 🎤 → "Mode" → Plain / Translate |
+| Switch language | 🎤 → "Language" → German / English / Auto-detect |
+| Copy a past transcription | 🎤 → "History" → click entry (text is put on the clipboard) |
+| Toggle start/stop sounds | 🎤 → "Play sounds" (off by default) |
+| Launch at login | 🎤 → "Launch at login" (checkbox) |
+| See state | Icon: 🎤 idle · 🔴 recording · ⏳ transcribing |
+| Quit | 🎤 → "Quit" (or `⌘Q` while the menu is open) |
 
 After each live transcription the text is pasted into the focused window via
 `⌘V`. Example flow in TextEdit: place cursor → `⌘⇧9` → speak → `⌘⇧9` → text
@@ -29,26 +29,23 @@ the clipboard so you can `⌘V` it wherever you want.
 ## Modes (post-processing)
 
 Between Whisper's raw transcription and the paste, you can apply a
-transformation. Pick one under 🎙 → "Mode":
+transformation. Pick one under 🎤 → "Mode":
 
 | Mode | What it does | Backend |
 |---|---|---|
 | **Plain** | Paste the raw transcription (default). | none |
-| **Emoji** | Replace explicit emoji-words (*daumen hoch* → 👍, *herz* → ❤️, …) AND insert context-fitting emojis at natural positions. German + English. | Local LLM |
-| **Polish** | Clean up dictated speech into polished written text: fix grammar, strip fillers (ähm, halt, also), keep language. | Local LLM |
-| **Friendly** | Soften angry / confrontational text into a more diplomatic version, keeping the core message. | Local LLM |
 | **Translate** | Translate whatever you dictate (German / Swiss German / English / …) into English. Forces Whisper into auto-detect so you can speak a different language than the menu's Language setting. | Local LLM |
 
-The LLM used by Emoji, Polish, Friendly, and Translate is
-`mlx-community/Llama-3.2-3B-Instruct-4bit` (~2 GB, runs on Apple Silicon
-via MLX). It **downloads lazily on first use** — the first LLM-mode
-transcription will block for a minute or two while the model fetches
-into the HuggingFace cache (`~/.cache/huggingface/hub/`), after that
-it's ~1–2 s per transformation. Plain never touches the LLM.
+The LLM used by Translate is `mlx-community/Meta-Llama-3.1-8B-Instruct-4bit`
+(~5 GB, runs on Apple Silicon via MLX). It **downloads lazily on first
+use** — the first Translate transcription will block for a few minutes
+while the model fetches into the HuggingFace cache
+(`~/.cache/huggingface/hub/`), after that it's ~2–4 s per transformation.
+Plain never touches the LLM.
 
-Switching to any non-Plain mode kicks off a **background preload** of
-the LLM, so the first recording in that mode no longer eats the cold
-start once the model is cached.
+Switching to Translate kicks off a **background preload** of the LLM,
+so the first recording in that mode no longer eats the cold start
+once the model is cached.
 
 Everything is offline — no cloud calls for any mode.
 
@@ -68,7 +65,7 @@ Nothing about your audio or text ever leaves the machine during use.
 | Microphone capture → audio buffer | Local (CoreAudio) | No |
 | Audio → text (Whisper transcription) | Local (MLX, Apple Silicon) | No |
 | Text → text (Plain mode) | No processing at all | No |
-| Text → text (Emoji / Polish / Friendly modes) | Local LLM (MLX, Apple Silicon) | No |
+| Text → text (Translate mode) | Local LLM (MLX, Apple Silicon) | No |
 | Text → focused app (paste via `⌘V`) | Local (pynput → Quartz) | No |
 
 **The only network activity is one-time downloads** of the two models
@@ -77,7 +74,7 @@ from HuggingFace, cached locally afterwards:
 | Model | Size | Downloaded when | Cache location |
 |---|---|---|---|
 | Whisper (`whisper-large-v3-turbo`) | ~1.5 GB | Setup (`--download`) or first recording | `~/.cache/huggingface/hub/models--mlx-community--whisper-*` |
-| LLM (`Llama-3.2-3B-Instruct-4bit`) | ~2 GB | First use of Emoji / Polish / Friendly | `~/.cache/huggingface/hub/models--mlx-community--Llama-*` |
+| LLM (`Meta-Llama-3.1-8B-Instruct-4bit`) | ~5 GB | First use of Translate | `~/.cache/huggingface/hub/models--mlx-community--Meta-Llama-*` |
 
 After both are cached, you can cut the network entirely and the app
 keeps working. Quick proof: toggle Wi-Fi off, dictate something, use
@@ -173,7 +170,7 @@ forever. To force-refresh:
 
 ```sh
 rm -rf ~/.cache/huggingface/hub/models--mlx-community--whisper-large-v3-turbo
-rm -rf ~/.cache/huggingface/hub/models--mlx-community--Llama-3.2-3B-Instruct-4bit
+rm -rf ~/.cache/huggingface/hub/models--mlx-community--Meta-Llama-3.1-8B-Instruct-4bit
 ```
 
 The next app launch (Whisper) / mode use (LLM) re-downloads. Rarely
@@ -187,7 +184,7 @@ on major fixes.
 MODEL = "mlx-community/whisper-large-v3-turbo-german-f16"   # DE-finetuned
 
 # modes.py
-LLM_MODEL = "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit"  # bigger, better
+LLM_MODEL = "mlx-community/Llama-3.2-3B-Instruct-4bit"  # smaller, faster
 ```
 
 Any `mlx-community/*` model on HuggingFace works. Bigger models →

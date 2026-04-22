@@ -134,18 +134,32 @@ Rules:
 
 Examples:
 
-Input:  "Ich gehe morgen mit meinen Kindern in den Zoo."
-Output: "I'm going to the zoo with my kids tomorrow."
+Input:  Ich gehe morgen mit meinen Kindern in den Zoo.
+Output: I'm going to the zoo with my kids tomorrow.
 
-Input:  "Kannst du bitte das Meeting auf nächste Woche verschieben?"
-Output: "Can you please move the meeting to next week?"
+Input:  Kannst du bitte das Meeting auf nächste Woche verschieben?
+Output: Can you please move the meeting to next week?
 
-Input:  "Das Projekt läuft gut, aber wir haben noch ein paar offene Fragen."
-Output: "The project is going well, but we still have a few open questions."
+Input:  Das Projekt läuft gut, aber wir haben noch ein paar offene Fragen.
+Output: The project is going well, but we still have a few open questions.
 
-Input:  "Let me know if that works for you."
-Output: "Let me know if that works for you."
+Input:  Let me know if that works for you.
+Output: Let me know if that works for you.
 """
+
+
+# Straight + typographic quotes (incl. German „…", French «…»).
+_WRAP_QUOTES = "\"'“”„‘’«»"
+
+
+def _strip_wrapping_quotes(text: str) -> str:
+    """Remove a single pair of wrapping quotes if the LLM decides to quote
+    its own output. Conservative: only strips when the whole string is
+    wrapped, never mid-sentence quotes."""
+    t = text.strip()
+    if len(t) >= 2 and t[0] in _WRAP_QUOTES and t[-1] in _WRAP_QUOTES:
+        return t[1:-1].strip()
+    return t
 
 
 class TranslateMode(Mode):
@@ -153,7 +167,8 @@ class TranslateMode(Mode):
     label = "Translate (→ English)"
 
     def transform(self, text: str) -> str:
-        return run_llm(_TRANSLATE_SYSTEM, text, max_tokens=self._max_tokens(text))
+        out = run_llm(_TRANSLATE_SYSTEM, text, max_tokens=self._max_tokens(text))
+        return _strip_wrapping_quotes(out)
 
 
 # ============================================================================

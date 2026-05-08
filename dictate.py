@@ -316,8 +316,16 @@ class Dictation:
         sounds_getter: Callable[[], bool],
     ) -> None:
         self._thread: threading.Thread | None = None
-        self._stop_event = threading.Event()
-        self._cancel_event = threading.Event()
+        # Per-worker events live on the worker; these instance attrs always
+        # point at the *current* worker's events so toggle() can signal it.
+        self._stop_event: threading.Event | None = None
+        self._cancel_event: threading.Event | None = None
+        # Bumped each time a new worker is spawned. A worker only mutates
+        # shared UI state if its gen still matches -- prevents an abandoned
+        # worker (e.g. a transcribe still running after a cancel + restart)
+        # from stomping on the live worker's state and leaving the app
+        # "stuck" with no event reference to interrupt it.
+        self._generation = 0
         self._lock = threading.Lock()
         self._state = "idle"
         self._state_callback = state_callback
@@ -352,39 +360,61 @@ class Dictation:
             print(f"[state] callback error: {e}", file=sys.stderr)
 
     def _start(self) -> None:
-        self._stop_event = threading.Event()
-        self._cancel_event = threading.Event()
+        self._generation += 1
+        gen = self._generation
+        stop_event = threading.Event()
+        cancel_event = threading.Event()
+        self._stop_event = stop_event
+        self._cancel_event = cancel_event
         self._play(SOUND_START)
-        print("[rec] Recording started.")
+        print(f"[rec] Recording started (gen {gen}).")
         self._emit("recording")
-        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread = threading.Thread(
+            target=self._run,
+            args=(gen, stop_event, cancel_event),
+            daemon=True,
+        )
         self._thread.start()
 
     def _stop(self) -> None:
         print("[rec] Stop signal sent.")
-        self._stop_event.set()
+        if self._stop_event is not None:
+            self._stop_event.set()
 
     def _cancel(self) -> None:
         print("[rec] Cancel during transcription.")
-        self._cancel_event.set()
+        if self._cancel_event is not None:
+            self._cancel_event.set()
         self._play(SOUND_CANCEL)
         # UI goes back to idle immediately; the transcription thread keeps
         # running in the background but its result is discarded.
         self._emit("idle")
 
-    def _run(self) -> None:
+    def _run(
+        self,
+        gen: int,
+        stop_event: threading.Event,
+        cancel_event: threading.Event,
+    ) -> None:
+        # Each worker carries its own events + generation. If a newer worker
+        # has been started (gen mismatch), this worker is "stale" and must
+        # not mutate UI state nor paste its result.
+        def is_stale() -> bool:
+            return gen != self._generation
+
         try:
-            audio = record_audio(self._stop_event)
+            audio = record_audio(stop_event)
             self._play(SOUND_STOP)
-            if self._cancel_event.is_set():
-                print("[rec] Cancelled before transcription.")
+            if cancel_event.is_set() or is_stale():
+                print(f"[rec] Cancelled before transcription (gen {gen}).")
                 return
             duration = len(audio) / SAMPLE_RATE
-            print(f"[rec] Recording ended ({duration:.1f}s). Transcribing...")
+            print(f"[rec] Recording ended ({duration:.1f}s, gen {gen}). Transcribing...")
             if duration < 0.3:
                 print("[rec] Too short, ignoring.")
                 return
-            self._emit("transcribing")
+            if not is_stale():
+                self._emit("transcribing")
             mode = self._mode_getter()
             # For Translate, force Whisper to auto-detect the source
             # language -- otherwise "Language=German + speak English"
@@ -392,10 +422,10 @@ class Dictation:
             # LLM ever sees it.
             lang = None if mode.id == "translate" else self._language_getter()
             raw = transcribe(audio, lang)
-            if self._cancel_event.is_set():
-                print(f"[rec] Result discarded (cancelled): {raw!r}")
+            if cancel_event.is_set() or is_stale():
+                print(f"[rec] Result discarded (cancelled, gen {gen}): {raw!r}")
                 return
-            print(f"[text] (raw) {raw!r}")
+            print(f"[text] (raw, gen {gen}) {raw!r}")
 
             # Apply mode transform (Plain is a no-op)
             if raw and mode.id != "plain":
@@ -405,8 +435,8 @@ class Dictation:
             else:
                 text = raw
 
-            if self._cancel_event.is_set():
-                print(f"[rec] Result discarded (cancelled post-mode): {text!r}")
+            if cancel_event.is_set() or is_stale():
+                print(f"[rec] Result discarded (cancelled post-mode, gen {gen}): {text!r}")
                 return
 
             # Swiss German: ß is not used -- collapse to ss/SS. Applied last so
@@ -418,10 +448,12 @@ class Dictation:
                 self._history_callback(text)
                 insert_text(text)
         except Exception as e:  # noqa: BLE001
-            print(f"[rec] Error: {e}", file=sys.stderr)
+            print(f"[rec] Error (gen {gen}): {e}", file=sys.stderr)
         finally:
-            # Only emit idle if we haven't already switched via _cancel().
-            if self._state != "idle":
+            # Only emit idle if we are still the active worker. Stomping on
+            # the live worker's state from a stale finally was the root cause
+            # of the "stuck recording" bug.
+            if not is_stale() and self._state != "idle":
                 self._emit("idle")
 
 

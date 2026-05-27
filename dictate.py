@@ -39,6 +39,22 @@ from typing import Callable
 import numpy as np
 import rumps
 import sounddevice as sd
+
+# pynput 1.8.1 looks up AXIsProcessTrusted on the HIServices module, but
+# pyobjc 12.x no longer exposes it there -- it lives on ApplicationServices.
+# Without this shim, the Listener thread crashes on start with
+# KeyError: 'AXIsProcessTrusted' and the global hotkey silently never fires.
+# Must run before `from pynput...` so the patched symbol is in place when
+# pynput's darwin backend is imported.
+try:
+    import HIServices  # type: ignore[import-not-found]
+    from ApplicationServices import (  # type: ignore[import-not-found]
+        AXIsProcessTrusted as _AXIsProcessTrusted,
+    )
+    HIServices.AXIsProcessTrusted = _AXIsProcessTrusted
+except Exception as _e:  # noqa: BLE001
+    print(f"[pynput-shim] could not patch HIServices.AXIsProcessTrusted: {_e}", file=sys.stderr)
+
 from pynput.keyboard import Controller, HotKey, Key, KeyCode, Listener
 
 from modes import MODES, Mode, preload_llm, safe_transform
@@ -377,9 +393,21 @@ class Dictation:
         self._thread.start()
 
     def _stop(self) -> None:
+        # If stop was already requested but state never returned to idle,
+        # the worker is hung (typically sd.InputStream not releasing the
+        # mic on close). Orphan it via generation bump and force idle so
+        # the next hotkey press can start a fresh recording -- otherwise
+        # every subsequent press just re-sets the same dead event and the
+        # app looks unresponsive to the keyboard.
+        if self._stop_event is None or self._stop_event.is_set():
+            print("[rec] Worker not responding to stop; forcing reset to idle.")
+            self._generation += 1
+            self._stop_event = None
+            self._cancel_event = None
+            self._emit("idle")
+            return
         print("[rec] Stop signal sent.")
-        if self._stop_event is not None:
-            self._stop_event.set()
+        self._stop_event.set()
 
     def _cancel(self) -> None:
         print("[rec] Cancel during transcription.")

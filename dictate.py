@@ -38,7 +38,6 @@ from typing import Callable
 
 import numpy as np
 import rumps
-import sounddevice as sd
 
 # pynput 1.8.1 looks up AXIsProcessTrusted on the HIServices module, but
 # pyobjc 12.x no longer exposes it there -- it lives on ApplicationServices.
@@ -57,7 +56,14 @@ except Exception as _e:  # noqa: BLE001
 
 from pynput.keyboard import Controller, HotKey, Key, KeyCode, Listener
 
-from modes import MODES, Mode, preload_llm, safe_transform
+from audio import (
+    AudioEngineError,
+    MicPermissionError,
+    ensure_mic_access,
+    mic_authorization_status,
+    record_audio,
+)
+from modes import MLX_LOCK, MODES, Mode, preload_llm, safe_transform
 
 # ============================================================================
 # Configuration
@@ -74,7 +80,6 @@ AVAILABLE_LANGUAGES: list[tuple[str, str | None]] = [
 ]
 
 SAMPLE_RATE = 16_000
-CHANNELS = 1
 MAX_RECORDING_SECONDS = 120
 HISTORY_SIZE = 5
 
@@ -141,36 +146,6 @@ def _clipboard_write(text: str) -> None:
 
 
 # ============================================================================
-# Audio recording
-# ============================================================================
-
-def record_audio(stop_event: threading.Event) -> np.ndarray:
-    chunks: list[np.ndarray] = []
-    start_time = time.monotonic()
-
-    def callback(indata, frames, time_info, status):  # noqa: ARG001
-        if status:
-            print(f"[audio] {status}", file=sys.stderr)
-        chunks.append(indata.copy())
-
-    with sd.InputStream(
-        samplerate=SAMPLE_RATE,
-        channels=CHANNELS,
-        dtype="float32",
-        callback=callback,
-    ):
-        while not stop_event.is_set():
-            if time.monotonic() - start_time > MAX_RECORDING_SECONDS:
-                print(f"[recorder] {MAX_RECORDING_SECONDS}s cap reached, stopping.")
-                break
-            time.sleep(0.05)
-
-    if not chunks:
-        return np.zeros(0, dtype=np.float32)
-    return np.concatenate(chunks, axis=0).flatten()
-
-
-# ============================================================================
 # Transcription
 # ============================================================================
 
@@ -181,7 +156,11 @@ def transcribe(audio: np.ndarray, language: str | None) -> str:
     if language is not None:
         kwargs["language"] = language
 
-    result = mlx_whisper.transcribe(audio, **kwargs)
+    # MLX_LOCK (shared with the LLM in modes.py): MLX is not thread-safe
+    # for concurrent GPU eval -- a preload, a cancelled-but-still-running
+    # transcription, and a fresh one must never overlap.
+    with MLX_LOCK:
+        result = mlx_whisper.transcribe(audio, **kwargs)
     return result.get("text", "").strip()
 
 
@@ -394,8 +373,9 @@ class Dictation:
 
     def _stop(self) -> None:
         # If stop was already requested but state never returned to idle,
-        # the worker is hung (typically sd.InputStream not releasing the
-        # mic on close). Orphan it via generation bump and force idle so
+        # the worker is hung (audio.py's engine watchdog should normally
+        # surface this as AudioEngineError first, but keep the belt to the
+        # suspenders). Orphan it via generation bump and force idle so
         # the next hotkey press can start a fresh recording -- otherwise
         # every subsequent press just re-sets the same dead event and the
         # app looks unresponsive to the keyboard.
@@ -431,15 +411,45 @@ class Dictation:
             return gen != self._generation
 
         try:
-            audio = record_audio(stop_event)
+            try:
+                audio = record_audio(
+                    stop_event,
+                    sample_rate=SAMPLE_RATE,
+                    max_seconds=MAX_RECORDING_SECONDS,
+                )
+            except MicPermissionError as e:
+                print(f"[rec] {e}", file=sys.stderr)
+                if not is_stale():
+                    rumps.notification(
+                        "Dictate", "Microphone access denied", str(e)
+                    )
+                return
+            except AudioEngineError as e:
+                print(f"[rec] audio engine failure (gen {gen}): {e}", file=sys.stderr)
+                return
             self._play(SOUND_STOP)
             if cancel_event.is_set() or is_stale():
                 print(f"[rec] Cancelled before transcription (gen {gen}).")
                 return
             duration = len(audio) / SAMPLE_RATE
-            print(f"[rec] Recording ended ({duration:.1f}s, gen {gen}). Transcribing...")
+            rms = float(np.sqrt(np.mean(audio**2))) if len(audio) else 0.0
+            print(
+                f"[rec] Recording ended ({duration:.1f}s, rms={rms:.6f}, "
+                f"gen {gen}). Transcribing..."
+            )
             if duration < 0.3:
                 print("[rec] Too short, ignoring.")
+                return
+            # Digital silence (dead/virtual input device): Whisper would
+            # hallucinate training-data phrases ("Untertitelung des ZDF").
+            # Real speech, even quiet/distant, lands around rms 1e-2.
+            if rms < 1e-5:
+                print(
+                    "[rec] Audio is silent -- mic delivered no signal "
+                    "(wrong/dead input device or missing mic permission). "
+                    "Skipping transcription.",
+                    file=sys.stderr,
+                )
                 return
             if not is_stale():
                 self._emit("transcribing")
@@ -822,6 +832,23 @@ class DictateApp(rumps.App):
             )
         else:
             print("[permissions] Input Monitoring: unable to verify")
+
+        # Microphone TCC diagnostic -- a denial yields silent zero-filled
+        # recordings, never an error, so surface it explicitly.
+        mic = mic_authorization_status()
+        if mic == "authorized":
+            print("[permissions] Microphone: granted (recording will work)")
+        elif mic in ("denied", "restricted"):
+            print(
+                "[permissions] Microphone: MISSING -- recording would be "
+                "silent. Fix: System Settings > Privacy & Security > "
+                "Microphone, enable Dictate, restart app."
+            )
+        else:
+            # not-determined: trigger the TCC prompt now so the first real
+            # recording doesn't lose its opening seconds to the dialog.
+            print("[permissions] Microphone: not determined -- requesting access...")
+            threading.Thread(target=ensure_mic_access, daemon=True).start()
 
     # ---------- Appearance ----------
 

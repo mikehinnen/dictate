@@ -16,7 +16,14 @@ first use of a mode that needs it. No cloud calls.
 from __future__ import annotations
 
 import sys
+import threading
 from typing import ClassVar
+
+# MLX is not thread-safe for concurrent GPU eval (mlx#2133). One process-wide
+# lock serializes ALL MLX work -- LLM load/generate here and Whisper
+# transcription in dictate.py -- so a preload, a cancelled-but-still-running
+# job, and a fresh one can never run eval concurrently.
+MLX_LOCK = threading.Lock()
 
 # ============================================================================
 # Local LLM (lazy-loaded, shared across LLM-backed modes)
@@ -41,10 +48,13 @@ def _ensure_llm() -> tuple[object, object]:
     print(f"[llm] loading {LLM_MODEL} (first use -- may download ~2 GB)...")
     from mlx_lm import load as _mlx_load  # type: ignore[import-not-found]
 
-    model, tokenizer = _mlx_load(LLM_MODEL)
-    _llm_model = model
-    _llm_tokenizer = tokenizer
-    _llm_loaded = True
+    with MLX_LOCK:
+        if _llm_loaded:
+            return _llm_model, _llm_tokenizer  # type: ignore[return-value]
+        model, tokenizer = _mlx_load(LLM_MODEL)
+        _llm_model = model
+        _llm_tokenizer = tokenizer
+        _llm_loaded = True
     print("[llm] ready.")
     return model, tokenizer
 
@@ -75,13 +85,14 @@ def run_llm(system: str, user: str, max_tokens: int = 512) -> str:
     )
     # mlx-lm.generate: synchronous, returns the generated text only
     # (without the prompt). verbose=False silences its progress prints.
-    response = _mlx_generate(
-        model,
-        tokenizer,
-        prompt=prompt,
-        max_tokens=max_tokens,
-        verbose=False,
-    )
+    with MLX_LOCK:
+        response = _mlx_generate(
+            model,
+            tokenizer,
+            prompt=prompt,
+            max_tokens=max_tokens,
+            verbose=False,
+        )
     return (response or "").strip()
 
 

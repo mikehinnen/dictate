@@ -39,7 +39,8 @@ from typing import Callable
 import numpy as np
 import rumps
 
-# pynput 1.8.1 looks up AXIsProcessTrusted on the HIServices module, but
+# pynput (still as of 1.8.2) looks up AXIsProcessTrusted on the HIServices
+# module, but
 # pyobjc 12.x no longer exposes it there -- it lives on ApplicationServices.
 # Without this shim, the Listener thread crashes on start with
 # KeyError: 'AXIsProcessTrusted' and the global hotkey silently never fires.
@@ -616,13 +617,20 @@ def run_listener(dictation: Dictation) -> None:
                     f"mods=0x{modifiers:x} hotkey={is_hotkey}",
                     file=sys.stderr,
                 )
-            if is_hotkey:
-                if event_type == KEY_DOWN and not hotkey_down[0]:
+            if keycode == trigger_vk and event_type == KEY_UP:
+                # Reset on ANY release of the trigger key, regardless of
+                # which modifiers are still held. Matching the full combo
+                # here would leave hotkey_down stuck when cmd/shift are
+                # released before the key -- swallowing the next toggle.
+                was_ours = hotkey_down[0]
+                hotkey_down[0] = False
+                if was_ours or modifiers == required_flags:
+                    return None  # suppress our own key-up
+            elif is_hotkey and event_type == KEY_DOWN:
+                if not hotkey_down[0]:
                     hotkey_down[0] = True
                     print("[hotkey] combo detected, toggling dictation")
                     dictation.toggle()
-                elif event_type == KEY_UP:
-                    hotkey_down[0] = False
                 return None  # suppress -- don't propagate to focused app
         except Exception as e:  # noqa: BLE001
             print(f"[hotkey] intercept error: {e}", file=sys.stderr)

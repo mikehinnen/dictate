@@ -208,7 +208,7 @@ Review the resulting `uv.lock` diff before committing.
 Standard git workflow — nothing special:
 
 ```sh
-cd /Users/hinn/code/claude/dictate
+cd /Users/hinn/code/personal/tools/dictate
 git pull
 uv sync                          # in case pyproject.toml changed
 bash launcher/build.sh           # ONLY if launcher/Dictate.swift changed

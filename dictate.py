@@ -927,7 +927,7 @@ class DictateApp(rumps.App):
             print(f"[mode] switched to {mode.id}")
             # Kick off LLM warmup in the background on first switch to an
             # LLM-backed mode, so the next recording doesn't eat the cold
-            # start (~10 s model load, or a ~2 GB download on first run).
+            # start (~10 s model load, or a ~5 GB download on first run).
             if mode.id != "plain":
                 threading.Thread(target=preload_llm, daemon=True).start()
         return handler

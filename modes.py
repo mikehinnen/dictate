@@ -9,7 +9,7 @@ Built-in modes:
     Plain     -- no transformation (default)
     Translate -- translates any source language to English (LLM)
 
-LLM backend: mlx-lm with a local 4-bit model (~2 GB). Downloads lazily on
+LLM backend: mlx-lm with a local 4-bit model (~5 GB). Downloads lazily on
 first use of a mode that needs it. No cloud calls.
 """
 
@@ -45,7 +45,7 @@ def _ensure_llm() -> tuple[object, object]:
 
     import mlx_lm  # noqa: F401  (lazy import; ~1s)
 
-    print(f"[llm] loading {LLM_MODEL} (first use -- may download ~2 GB)...")
+    print(f"[llm] loading {LLM_MODEL} (first use -- may download ~5 GB)...")
     from mlx_lm import load as _mlx_load  # type: ignore[import-not-found]
 
     with MLX_LOCK:

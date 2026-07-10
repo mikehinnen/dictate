@@ -37,7 +37,7 @@ echo "  Privacy & Security > Input Monitoring"
 echo "  Privacy & Security > Accessibility"
 echo
 echo "In each pane: select any existing Dictate entry, press '-',"
-echo "then '+' and pick /Users/hinn/code/claude/dictate/Dictate.app"
+echo "then '+' and pick /Users/hinn/code/personal/tools/dictate/Dictate.app"
 echo "(or wherever your checkout lives) and toggle it on. Restart"
 echo "Dictate.app afterwards. Until then, the global hotkey and"
 echo "paste-into-focused-app will silently fail."

@@ -1,4 +1,8 @@
-# CLAUDE.md
+# AGENTS.md
+
+> Agent-neutraler Ableger von `CLAUDE.md` (für Codex u.a., die nach `AGENTS.md`
+> suchen). Inhaltlich identisch zu `CLAUDE.md` halten: wer eine der beiden
+> ändert, zieht die andere mit.
 
 Guidance for AI agents working in this repo. Written in English; keep code
 comments and this file English. Operator docs (README.md) are German. No

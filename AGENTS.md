@@ -66,9 +66,12 @@ ss-normalization -> `insert_text()` (clipboard + simulated Cmd+V).
 The single entrypoint and the bulk of the logic.
 
 - Top-of-file `HIServices.AXIsProcessTrusted` shim: pynput 1.8.2 looks up
-  `AXIsProcessTrusted` on `HIServices`, but pyobjc 12.x moved it to
-  `ApplicationServices`. Without the shim the pynput listener thread crashes
-  on start and the global hotkey silently never fires. Must run before
+  `AXIsProcessTrusted` on `HIServices`. pyobjc 12.2.1 exposed it only on
+  `ApplicationServices`, and without the shim the pynput listener thread
+  crashed on start, so the global hotkey silently never fired. pyobjc 12.2.2
+  (current pin) has it on `HIServices` again, so the shim is a no-op today.
+  Keep it: it costs nothing and it is the difference between a working hotkey
+  and a silent failure if the symbol moves again. Must run before
   `from pynput...`.
 - `transcribe(audio, language)`: calls `mlx_whisper.transcribe` under the
   shared `MLX_LOCK` (from modes.py). MLX is not thread-safe for concurrent

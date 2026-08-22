@@ -40,12 +40,13 @@ import numpy as np
 import rumps
 
 # pynput (still as of 1.8.2) looks up AXIsProcessTrusted on the HIServices
-# module, but
-# pyobjc 12.x no longer exposes it there -- it lives on ApplicationServices.
-# Without this shim, the Listener thread crashes on start with
-# KeyError: 'AXIsProcessTrusted' and the global hotkey silently never fires.
-# Must run before `from pynput...` so the patched symbol is in place when
-# pynput's darwin backend is imported.
+# module. pyobjc 12.2.1 did not expose it there -- it lived only on
+# ApplicationServices -- and without this shim the Listener thread crashed on
+# start with KeyError: 'AXIsProcessTrusted', so the global hotkey silently
+# never fired. pyobjc 12.2.2 exposes it on HIServices again, which makes the
+# shim a no-op there; it stays as a guard against the regression coming back
+# and against older pyobjc. Must run before `from pynput...` so the patched
+# symbol is in place when pynput's darwin backend is imported.
 try:
     import HIServices  # type: ignore[import-not-found]
     from ApplicationServices import (  # type: ignore[import-not-found]

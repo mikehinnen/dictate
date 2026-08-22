@@ -1,8 +1,12 @@
 # CLAUDE.md
 
 Guidance for AI agents working in this repo. Written in English; keep code
-comments and this file English. Operator docs (README.md) are German. No
-em-dashes anywhere.
+comments, this file and the operator docs (README.md) English. The workspace
+default is German, this repo is the exception: it is a public-shaped GitHub
+project whose README is the install and troubleshooting doc. No em-dashes in
+prose, in any file. The only em-dashes in the repo are the two empty-slot
+placeholder glyphs in the History menu (dictate.py), which are UI typography,
+not prose.
 
 ## Project
 
@@ -223,18 +227,33 @@ keeps the identity; the Python child inherits it via posix_spawn.
   mid-generation, so the result is computed and then discarded.
 - Runtime tunables are constants at the top of dictate.py (`MODEL`,
   `DEFAULT_LANGUAGE`, `MAX_RECORDING_SECONDS`, `HISTORY_SIZE`,
-  `HOTKEY_MODIFIERS`, `HOTKEY_TRIGGER`) and `LLM_MODEL` in modes.py. Any
-  `mlx-community/*` model works.
+  `HOTKEY_MODIFIERS`, `HOTKEY_TRIGGER`, `PASTE_DELAY_BEFORE` /
+  `PASTE_DELAY_AFTER`, `SOUND_START` / `SOUND_STOP` / `SOUND_CANCEL`) and
+  `LLM_MODEL` in modes.py. Any `mlx-community/*` model works.
+- Menubar icons are emoji by default. If all three of `menubar-idle.png`,
+  `menubar-recording.png` and `menubar-transcribing.png` exist in
+  `Dictate.app/Contents/Resources/`, `DictateApp` switches to them as
+  template images (`_use_png_icons`, logged at startup as `[app] Icons:`).
+  The directory does not exist in the committed bundle, so the default path
+  is emoji.
+- A dead global hotkey with a working menubar Start/Stop is usually not a
+  bug in this repo: macOS Secure Input locks the keyboard process-wide.
+  `ioreg -l -w 0 | grep kCGSSessionSecureInputPID` names the holder. Seen:
+  Terminal with Secure Keyboard Entry on, and a `loginwindow` wedged since
+  boot by Jamf Connect (clears with `sudo killall loginwindow`, which logs
+  the GUI session out). Check this before touching listener code.
 
 ## Known issues / doc drift
 
-- LLM download size is now consistent at ~5 GB across `modes.py`, `dictate.py`
-  and README.md (`Meta-Llama-3.1-8B-Instruct-4bit`, roughly 4.5 to 5 GB).
-- The project was moved from `/Users/hinn/code/claude/dictate` (old path, the
-  workspace root was still named `code` at the time) to its current location
-  `/Users/hinn/workspace/personal/tools/dictate`. The stale paths in
-  `launcher/build.sh` and `.claude/settings.local.json` have been corrected,
-  but the move itself (new path AND new parent folder, see the TCC note above)
-  will have invalidated the Microphone / Accessibility / Input Monitoring
-  grants. Re-add `Dictate.app` in the three Privacy panes if the global hotkey
-  or paste-into-focused-app stopped working.
+None open. The two former entries (LLM download size, the move from
+`/Users/hinn/code/claude/dictate`) are resolved: sizes are consistent across
+`modes.py`, `dictate.py` and README.md, and `launcher/build.sh` derives every
+path from its own location instead of hardcoding a checkout. The TCC
+consequence of that move is not a doc issue, it is the permanent gotcha
+documented above.
+
+Doc invariants worth re-checking when the code changes: the constants table in
+README.md "Customization", the menu list in the `dictate.py` module docstring,
+and the model sizes in `modes.py` / README.md. `AGENTS.md` is generated from
+this file, never edited: run `python3 ~/workspace/scripts/gen_agents.py` after
+touching CLAUDE.md, `--check` to verify.

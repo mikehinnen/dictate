@@ -15,8 +15,9 @@ Menubar icon shows state:
     transcribing   ⏳  (or Resources/menubar-transcribing.png)
 
 Menu contains: Start/Stop toggle, History (last 5 -- click copies to
-clipboard), Language (German/English/Auto-detect), "Launch at login"
-(macOS 13+), and a model info line.
+clipboard), Mode (Plain/Translate), Language (German/English/Auto-detect),
+"Play sounds" (off by default), "Launch at login" (macOS 13+), and a model
+info line.
 
 First-time setup:
     uv sync                                    # install dependencies

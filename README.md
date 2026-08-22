@@ -1,7 +1,7 @@
-# dictate — local Whisper dictation for macOS
+# dictate: local Whisper dictation for macOS
 
 Menubar app for speech-to-text, running 100% locally on Apple Silicon.
-No cloud service, no API key — just your microphone and MLX-Whisper.
+No cloud service, no API key, just your microphone and MLX-Whisper.
 
 ## Usage
 
@@ -10,7 +10,7 @@ Double-click `Dictate.app` → 🎤 icon appears in the menu bar (top right).
 | Action | How |
 |---|---|
 | Start/stop recording | Hotkey `⌘⇧9` **or** click 🎤 → "Start recording" |
-| Cancel transcription | Press the hotkey again while ⏳ is running — result is discarded |
+| Cancel transcription | Press the hotkey again while ⏳ is running, result is discarded |
 | Pick a post-processing mode | 🎤 → "Mode" → Plain / Translate |
 | Switch language | 🎤 → "Language" → German / English / Auto-detect |
 | Copy a past transcription | 🎤 → "History" → click entry (text is put on the clipboard) |
@@ -23,7 +23,7 @@ After each live transcription the text is pasted into the focused window via
 `⌘V`. Example flow in TextEdit: place cursor → `⌘⇧9` → speak → `⌘⇧9` → text
 appears.
 
-**History entries don't auto-paste** — clicking them just copies the text to
+**History entries don't auto-paste**: clicking them just copies the text to
 the clipboard so you can `⌘V` it wherever you want.
 
 ## Modes (post-processing)
@@ -38,7 +38,7 @@ transformation. Pick one under 🎤 → "Mode":
 
 The LLM used by Translate is `mlx-community/Meta-Llama-3.1-8B-Instruct-4bit`
 (~5 GB, runs on Apple Silicon via MLX). It **downloads lazily on first
-use** — the first Translate transcription will block for a few minutes
+use**. The first Translate transcription will block for a few minutes
 while the model fetches into the HuggingFace cache
 (`~/.cache/huggingface/hub/`), after that it's ~2–4 s per transformation.
 Plain never touches the LLM.
@@ -47,7 +47,7 @@ Switching to Translate kicks off a **background preload** of the LLM,
 so the first recording in that mode no longer eats the cold start
 once the model is cached.
 
-Everything is offline — no cloud calls for any mode.
+Everything is offline, no cloud calls for any mode.
 
 ### Swiss spelling (ß → ss)
 
@@ -56,7 +56,7 @@ All output is post-processed to replace `ß` / `ẞ` with `ss` / `SS`
 so Whisper's standard-German `draußen` becomes `draussen` before it
 hits the clipboard.
 
-## Privacy — what runs where
+## Privacy: what runs where
 
 Nothing about your audio or text ever leaves the machine during use.
 
@@ -78,7 +78,7 @@ from HuggingFace, cached locally afterwards:
 
 After both are cached, you can cut the network entirely and the app
 keeps working. Quick proof: toggle Wi-Fi off, dictate something, use
-any mode — all good. Watchable with `lsof -i -p $(pgrep -f dictate.py)`
+any mode, all good. Watchable with `lsof -i -p $(pgrep -f dictate.py)`
 if you're paranoid.
 
 ## First-time setup
@@ -97,14 +97,14 @@ the bundle executable would lose bundle identity on every `exec`, and the
 Permissions panes would list `uv` or `python` instead of `Dictate`. A native
 binary preserves the identity.
 
-The binary is **not committed** (see `.gitignore`) — every checkout must run
+The binary is **not committed** (see `.gitignore`), so every checkout must run
 `bash launcher/build.sh` once. Run the same command after editing
 `Dictate.swift`.
 
 ## macOS permissions (one-time)
 
 On first keystroke / first recording, macOS asks for three permissions. They
-bind to **Dictate.app** — *not* to the Terminal.
+bind to **Dictate.app**, *not* to the Terminal.
 
 | Permission | Why | When prompted |
 |---|---|---|
@@ -125,7 +125,7 @@ Then fully quit the app (menu → Quit) and reopen it.
 ### If you move or rename the project folder
 
 TCC permissions on **unsigned** apps are path-bound. Moving or renaming the
-`.app` (or any parent folder) invalidates the grants silently — macOS keeps
+`.app` (or any parent folder) invalidates the grants silently: macOS keeps
 the stale entry, doesn't re-prompt, and the app just silently lacks the
 permission. Symptom: the hotkey stops firing, or `⌘V` no longer simulates.
 
@@ -140,11 +140,15 @@ Constants at the top of `dictate.py`:
 | Constant | Default | Notes |
 |---|---|---|
 | `MODEL` | `mlx-community/whisper-large-v3-turbo` | try `whisper-large-v3-turbo-german-f16`, `whisper-medium-mlx`, `whisper-small-mlx` |
-| `DEFAULT_LANGUAGE` | `"de"` | `"en"`, `None` (auto) — also switchable at runtime via menu |
+| `DEFAULT_LANGUAGE` | `"de"` | `"en"`, `None` (auto), also switchable at runtime via menu |
 | `MAX_RECORDING_SECONDS` | `120` | arbitrary |
 | `HISTORY_SIZE` | `5` | how many history entries to keep |
 | `HOTKEY_MODIFIERS` | `{Key.cmd, Key.shift}` | `⌘`+`⇧` is the most robust combo on macOS |
 | `HOTKEY_TRIGGER` | `KeyCode.from_char("9")` | any letter/digit |
+| `PASTE_DELAY_BEFORE` / `PASTE_DELAY_AFTER` | `0.05` / `0.40` | seconds around the simulated `⌘V`; raise `AFTER` if slow apps (Slack, Notion) drop the paste |
+| `SOUND_START` / `SOUND_STOP` / `SOUND_CANCEL` | `Tink` / `Pop` / `Funk` | any `/System/Library/Sounds/*.aiff`; only played when "Play sounds" is on |
+
+`LLM_MODEL` lives in `modes.py`, not here.
 
 ### Custom menubar icon (optional)
 
@@ -160,7 +164,7 @@ the shape. macOS inverts them automatically in Dark mode.
 
 ## Updates & maintenance
 
-Nothing auto-updates. Everything is pinned and explicit — the
+Nothing auto-updates. Everything is pinned and explicit. The
 trade-off: no surprises, but you decide when to refresh.
 
 ### Models (Whisper + LLM)
@@ -174,7 +178,7 @@ rm -rf ~/.cache/huggingface/hub/models--mlx-community--Meta-Llama-3.1-8B-Instruc
 ```
 
 The next app launch (Whisper) / mode use (LLM) re-downloads. Rarely
-needed — the published weights for these specific model IDs change only
+needed, the published weights for these specific model IDs change only
 on major fixes.
 
 **Switching to a different model** is just a constant change:
@@ -205,7 +209,7 @@ Review the resulting `uv.lock` diff before committing.
 
 ### The app itself
 
-Standard git workflow — nothing special:
+Standard git workflow, nothing special:
 
 ```sh
 cd /Users/hinn/workspace/personal/tools/dictate
@@ -215,7 +219,7 @@ bash launcher/build.sh           # ONLY if launcher/Dictate.swift changed
 ```
 
 **Heads-up on the Swift rebuild:** it produces a binary with a new
-cdhash, and for unsigned apps macOS TCC treats that as a new identity —
+cdhash, and for unsigned apps macOS TCC treats that as a new identity, so
 your Input Monitoring / Accessibility / Microphone grants will silently
 stop applying. See *Troubleshooting* below for the re-add recipe.
 
@@ -238,6 +242,8 @@ Or open `Console.app`.
 - **Hotkey doesn't fire** → check *Input Monitoring*; `Dictate.app` must be
   in the list and toggled on. Restart the app after granting. If the folder
   was moved or renamed, see *"If you move or rename the project folder"*.
+  If the menubar Start/Stop still works, it is Secure Input instead, see the
+  bullet further down.
 - **`⌘V` doesn't paste after transcription** → *Accessibility* permission
   missing (see above). If it still fails in slow apps (Slack, Notion),
   increase `PASTE_DELAY_AFTER` in `dictate.py`.
@@ -263,9 +269,34 @@ Or open `Console.app`.
 - **App log shows `[permissions] Accessibility: MISSING` or `Input
   Monitoring: MISSING`** → exact fix the log describes. Both are
   separate TCC categories; granting one does not grant the other.
-- **Transcription is always "Vielen Dank." or "Untertitel von der
-  Amara.org-Community"** → Whisper hallucinating on silence or very
-  short audio (<1 s). Speak clearly for 2+ seconds.
+- **Transcription is always "Vielen Dank.", "Untertitelung des ZDF" or
+  "Untertitel von der Amara.org-Community"** → Whisper hallucinates
+  training-data phrases when it gets silence. That means the microphone
+  delivered nothing, so the fix is on the audio side, not in how you speak.
+  Check the log: every recording logs `recording from: <device>` and
+  `rms=`. Real speech, even quiet, lands around `rms 1e-2`. Below `1e-5`
+  the app now refuses to transcribe and logs why, so a fresh occurrence
+  points at a wrong or dead input device (Teams virtual audio, an iPhone
+  continuity mic that went away, a USB webcam) or at a missing microphone
+  grant. Pick the right input in System Settings > Sound and record again.
+  One cause is invisible in System Settings: the input can be muted at the
+  **CoreAudio device level** (`kAudioDevicePropertyMute`), while the input
+  *volume* slider still reads normal. A Logitech mute key does this, and Logi
+  Options+ shows a small red mic-with-a-slash overlay near the menubar as the
+  only hint. Press the mute key again to clear it.
+- **Hotkey beeps or does nothing, but the menubar Start/Stop still works**
+  → macOS **Secure Input** is active: some process has locked the keyboard
+  and no other app sees key events. Find the holder:
+  ```sh
+  ioreg -l -w 0 | grep kCGSSessionSecureInputPID
+  ps -p <pid>
+  ```
+  No output from the first command means nothing holds Secure Input, so look
+  elsewhere. A non-zero PID is the culprit.
+  Seen so far: Terminal with *Secure Keyboard Entry* enabled (uncheck it in
+  the Terminal menu), and `loginwindow` holding it since boot, which is a
+  wedged Jamf Connect login window. The latter clears with
+  `sudo killall loginwindow` (logs the GUI session out, so save first).
 
 ## Terminal mode (fallback / debugging)
 
@@ -282,12 +313,12 @@ needs bundle context.
 ## Limits
 
 - Recordings are capped at 120 s (`MAX_RECORDING_SECONDS`).
-- Cancel-during-transcription is *best effort* — MLX can't be stopped
+- Cancel-during-transcription is *best effort*: MLX can't be stopped
   mid-flight; the result is simply discarded.
 - When pasting, the clipboard is briefly overwritten and then restored
-  (best effort, plain text only — images/rich text may be lost).
+  (best effort, plain text only, images/rich text may be lost).
 - The history is in-memory only; it's empty after each app restart.
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+MIT, see [`LICENSE`](LICENSE).

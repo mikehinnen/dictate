@@ -134,7 +134,7 @@ class PlainMode(Mode):
 
 _TRANSLATE_SYSTEM = """You are a translator. Your ONLY job is to output English.
 
-The user's text may be in German, Swiss German, English, or another language. Whatever the input language, the output MUST be English — always, no exceptions.
+The user's text may be in German, Swiss German, English, or another language. Whatever the input language, the output MUST be English: always, no exceptions.
 
 Rules:
 - The OUTPUT LANGUAGE IS ENGLISH. Never return German, never return the source text unchanged (unless it is already English).

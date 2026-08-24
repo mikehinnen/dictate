@@ -254,6 +254,6 @@ documented above.
 
 Doc invariants worth re-checking when the code changes: the constants table in
 README.md "Customization", the menu list in the `dictate.py` module docstring,
-and the model sizes in `modes.py` / README.md. `AGENTS.md` is generated from
+and the model sizes in `modes.py` / README.md. (`AGENTS.md` was generated from
 this file, never edited: run `python3 ~/workspace/scripts/gen_agents.py` after
 touching CLAUDE.md, `--check` to verify.

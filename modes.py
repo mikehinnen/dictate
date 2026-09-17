@@ -36,6 +36,31 @@ _llm_tokenizer = None
 _llm_loaded = False
 
 
+def _fetch_llm_weights() -> None:
+    """Make sure the weights are in the HuggingFace cache, WITHOUT holding
+    MLX_LOCK. mlx_lm.load() would download them itself, but it runs inside
+    the lock, so a cold cache would block every Whisper transcription for
+    the whole ~5 GB transfer and the app would look hung. A warm cache makes
+    this a no-op. Failures are not fatal here: we fall through and let
+    mlx_lm.load() surface the real error."""
+    try:
+        from huggingface_hub import snapshot_download  # type: ignore[import-not-found]
+    except ImportError:
+        return
+    try:
+        # Cache-only first: no Hub round trip, so a warm cache stays instant
+        # and works offline. Only a genuine cache miss goes to the network.
+        snapshot_download(LLM_MODEL, local_files_only=True)
+        return
+    except Exception:  # noqa: BLE001  (not cached yet)
+        pass
+    print(f"[llm] downloading {LLM_MODEL} (~5 GB, one-off)...")
+    try:
+        snapshot_download(LLM_MODEL)
+    except Exception as e:  # noqa: BLE001
+        print(f"[llm] prefetch failed ({e}), letting the loader retry", file=sys.stderr)
+
+
 def _ensure_llm() -> tuple[object, object]:
     """Load the LLM on first call. Subsequent calls return the cached
     model/tokenizer pair. Raises on download/load failure."""
@@ -47,6 +72,10 @@ def _ensure_llm() -> tuple[object, object]:
 
     print(f"[llm] loading {LLM_MODEL} (first use -- may download ~5 GB)...")
     from mlx_lm import load as _mlx_load  # type: ignore[import-not-found]
+
+    # Download outside the lock, load inside it: only the GPU-touching part
+    # needs to be serialized against Whisper.
+    _fetch_llm_weights()
 
     with MLX_LOCK:
         if _llm_loaded:

@@ -38,9 +38,10 @@ transformation. Pick one under 🎤 → "Mode":
 
 The LLM used by Translate is `mlx-community/Meta-Llama-3.1-8B-Instruct-4bit`
 (~5 GB, runs on Apple Silicon via MLX). It **downloads lazily on first
-use**. The first Translate transcription will block for a few minutes
-while the model fetches into the HuggingFace cache
-(`~/.cache/huggingface/hub/`), after that it's ~2–4 s per transformation.
+use**, on a background thread, into the HuggingFace cache
+(`~/.cache/huggingface/hub/`). The download runs outside `MLX_LOCK`, so
+dictation in Plain mode keeps working while it fetches; only Translate
+waits for it. After that it's ~2–4 s per transformation.
 Plain never touches the LLM.
 
 Switching to Translate kicks off a **background preload** of the LLM,

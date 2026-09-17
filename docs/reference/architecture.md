@@ -104,6 +104,10 @@ selected at runtime via the menubar.
   after first load. `preload_llm()` is fired on a background thread when the user switches to
   an LLM-backed mode so the first recording does not pay the cold start (or first-run
   download).
+- `_fetch_llm_weights()`: called by `_ensure_llm()` *before* it takes `MLX_LOCK`. Tries the HF
+  cache first (`local_files_only=True`, no Hub round trip, works offline), and only a genuine
+  miss hits the network. Keeps a cold-cache download out of the lock, which would otherwise
+  stall every Whisper transcription for the whole ~5 GB transfer.
 - `Mode` base class, `PlainMode` (no-op default), `TranslateMode` (any language to English via
   the LLM). `MODES` is the ordered registry the menu renders; `MODES[0]` (Plain) is the
   default.

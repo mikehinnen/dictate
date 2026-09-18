@@ -29,6 +29,7 @@ First-time setup:
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import threading
@@ -81,6 +82,39 @@ AVAILABLE_LANGUAGES: list[tuple[str, str | None]] = [
     ("English", "en"),
     ("Auto-detect", None),
 ]
+
+# Domain vocabulary, handed to Whisper as `initial_prompt`. Whisper treats the
+# prompt as text that preceded the audio, so it biases the decoder towards
+# these spellings without constraining it: "Exel" -> "Access", "Heirox" ->
+# "Hyrox", "PAYOE" -> "PoE". Two rules when editing it:
+#
+#   1. Keep it a bare comma-separated term list. A sentence-shaped prompt gets
+#      echoed into the transcript of unrelated audio (prompt hallucination,
+#      the same failure class as the silence hallucination guarded in
+#      _worker()). Terms are not sentences, so there is nothing to continue.
+#   2. Keep it short. The prompt window is 224 tokens; anything past that is
+#      silently dropped, so a long list would quietly lose its tail.
+#
+# Only add words Whisper actually gets wrong. Every entry costs window budget
+# and adds a little pull towards itself.
+VOCABULARY: tuple[str, ...] = (
+    # Network / ZHAW
+    "ZHAW", "SD-Access", "Fabric", "Catalyst Center", "Catalyst 9300",
+    "Catalyst 9500", "PoE", "UPoE", "Multigig", "Access Point", "Uplink",
+    "Distribution", "Border", "VLAN", "VRF", "BGP", "LISP", "WLC", "ISE",
+    "Infoblox", "SWIM", "Lifecycle", "End of Life",
+    # Tooling
+    "Claude Code", "MCP-Server", "Skill", "Repo", "Confluence", "Jira",
+    "Topdesk",
+    # Sport
+    "Hyrox",
+)
+
+# Set DICTATE_NO_VOCAB=1 to transcribe without the bias and compare.
+INITIAL_PROMPT: str | None = (
+    None if os.environ.get("DICTATE_NO_VOCAB") == "1"
+    else ", ".join(VOCABULARY) + "."
+)
 
 SAMPLE_RATE = 16_000
 MAX_RECORDING_SECONDS = 120
@@ -152,12 +186,21 @@ def _clipboard_write(text: str) -> None:
 # Transcription
 # ============================================================================
 
-def transcribe(audio: np.ndarray, language: str | None) -> str:
+def transcribe(
+    audio: np.ndarray, language: str | None, *, use_vocabulary: bool = True
+) -> str:
+    """`use_vocabulary=False` skips VOCABULARY. Only the warmup needs that:
+    it feeds literal zeros, and on speechless audio Whisper continues the
+    prompt instead of ignoring it, so the smoke test would print a garbled
+    re-listing of the vocabulary. Real recordings never take that path --
+    _worker() drops digital silence before it gets here."""
     import mlx_whisper
 
     kwargs: dict = {"path_or_hf_repo": MODEL}
     if language is not None:
         kwargs["language"] = language
+    if use_vocabulary and INITIAL_PROMPT:
+        kwargs["initial_prompt"] = INITIAL_PROMPT
 
     # MLX_LOCK (shared with the LLM in modes.py): MLX is not thread-safe
     # for concurrent GPU eval -- a preload, a cancelled-but-still-running
@@ -604,7 +647,6 @@ def run_listener(dictation: Dictation) -> None:
     # Avoid firing repeatedly while the key is auto-repeating.
     hotkey_down = [False]
 
-    import os
     trace = os.environ.get("DICTATE_KEY_TRACE") == "1"
 
     def darwin_intercept(event_type, event):
@@ -989,7 +1031,7 @@ class DictateApp(rumps.App):
 def warmup_download() -> None:
     print(f"Downloading model {MODEL} (~1.5 GB on first run)...")
     silence = np.zeros(SAMPLE_RATE, dtype=np.float32)
-    text = transcribe(silence, DEFAULT_LANGUAGE)
+    text = transcribe(silence, DEFAULT_LANGUAGE, use_vocabulary=False)
     print(f"Model ready. (silence -> {text!r})")
 
 

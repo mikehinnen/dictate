@@ -21,9 +21,14 @@ The single entrypoint and the bulk of the logic.
   again, so the shim is a no-op today. Keep it: it costs nothing and it is the difference
   between a working hotkey and a silent failure if the symbol moves again. Must run before
   `from pynput...`.
-- `transcribe(audio, language)`: calls `mlx_whisper.transcribe` under the shared `MLX_LOCK`
-  (from modes.py). MLX is not thread-safe for concurrent GPU eval, so Whisper and the LLM
-  never run at the same time.
+- `transcribe(audio, language, *, use_vocabulary=True)`: calls `mlx_whisper.transcribe` under
+  the shared `MLX_LOCK` (from modes.py). MLX is not thread-safe for concurrent GPU eval, so
+  Whisper and the LLM never run at the same time. Passes `VOCABULARY` as `initial_prompt` to
+  bias the decoder towards domain spellings. `use_vocabulary=False` exists for
+  `warmup_download()` alone: it transcribes literal zeros, and on speechless audio Whisper
+  continues the prompt rather than ignoring it, so the smoke test would print a garbled
+  re-listing of the vocabulary. Recordings never hit that case, the rms guard in `_worker()`
+  drops digital silence first.
 - `insert_text(text)`: saves the clipboard, writes the text, simulates Cmd+V via
   `pynput.Controller`, then restores the old clipboard (best effort, plain text only).
   `PASTE_DELAY_AFTER` (0.40 s) is deliberately generous because slow apps (Slack, Notion) drop

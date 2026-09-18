@@ -142,6 +142,7 @@ Constants at the top of `dictate.py`:
 |---|---|---|
 | `MODEL` | `mlx-community/whisper-large-v3-turbo` | try `whisper-large-v3-turbo-german-f16`, `whisper-medium-mlx`, `whisper-small-mlx` |
 | `DEFAULT_LANGUAGE` | `"de"` | `"en"`, `None` (auto), also switchable at runtime via menu |
+| `VOCABULARY` | domain terms (ZHAW, Catalyst, PoE, Hyrox, ...) | fed to Whisper as `initial_prompt` so it spells them right; keep it a short term list, see below |
 | `MAX_RECORDING_SECONDS` | `120` | arbitrary |
 | `HISTORY_SIZE` | `5` | how many history entries to keep |
 | `HOTKEY_MODIFIERS` | `{Key.cmd, Key.shift}` | `⌘`+`⇧` is the most robust combo on macOS |
@@ -150,6 +151,22 @@ Constants at the top of `dictate.py`:
 | `SOUND_START` / `SOUND_STOP` / `SOUND_CANCEL` | `Tink` / `Pop` / `Funk` | any `/System/Library/Sounds/*.aiff`; only played when "Play sounds" is on |
 
 `LLM_MODEL` lives in `modes.py`, not here.
+
+#### `VOCABULARY`
+
+Whisper reads `initial_prompt` as text that preceded the audio, so listing the
+words it keeps getting wrong ("Exel" for Access, "Heirox" for Hyrox) pulls the
+decoder towards the right spelling. Two rules when you edit the list:
+
+- **Bare terms, no sentences.** A sentence-shaped prompt gets continued into
+  the transcript when the audio has no speech in it. A comma-separated term
+  list gives it nothing to continue.
+- **Keep it short.** The prompt window is 224 tokens and the tail is dropped
+  silently. The shipped list is ~113 tokens, so there is room, but not much.
+
+Only add words Whisper actually gets wrong: every entry costs window budget and
+biases a little towards itself. Run with `DICTATE_NO_VOCAB=1` to transcribe
+without the bias and compare.
 
 ### Custom menubar icon (optional)
 
@@ -248,8 +265,13 @@ Or open `Console.app`.
 - **`⌘V` doesn't paste after transcription** → *Accessibility* permission
   missing (see above). If it still fails in slow apps (Slack, Notion),
   increase `PASTE_DELAY_AFTER` in `dictate.py`.
-- **Wrong German words in the transcript** → switch `MODEL` to
-  `mlx-community/whisper-large-v3-turbo-german-f16` (DE-finetuned).
+- **Wrong German words in the transcript** → if it is domain vocabulary
+  (product names, jargon), add it to `VOCABULARY` in `dictate.py`. Otherwise
+  switch `MODEL` to `mlx-community/whisper-large-v3-turbo-german-f16`
+  (DE-finetuned).
+- **Transcript reads like a list of the vocabulary terms** → that is the
+  `initial_prompt` being continued, which means the audio carried no speech
+  (check the `rms=` value in the log). Confirm with `DICTATE_NO_VOCAB=1`.
 - **First transcription after startup is fast** → the model is preloaded in
   the background; look for `[preload] Model loaded` in the log.
 - **Clear the model cache** → `rm -rf ~/.cache/huggingface/hub/models--mlx-community--whisper-*`

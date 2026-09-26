@@ -116,6 +116,11 @@ INITIAL_PROMPT: str | None = (
     else ", ".join(VOCABULARY) + "."
 )
 
+# Segments above this are repetition loops and get dropped in transcribe().
+# Same value as Whisper's own fallback threshold. Normal speech sits at 0.6
+# to 1.0.
+COMPRESSION_RATIO_MAX = 2.4
+
 SAMPLE_RATE = 16_000
 MAX_RECORDING_SECONDS = 120
 HISTORY_SIZE = 5
@@ -192,11 +197,21 @@ def transcribe(
     """`use_vocabulary=False` skips VOCABULARY. Only the warmup needs that:
     it feeds literal zeros, and on speechless audio Whisper continues the
     prompt instead of ignoring it, so the smoke test would print a garbled
-    re-listing of the vocabulary. Real recordings never take that path --
-    _worker() drops digital silence before it gets here."""
+    re-listing of the vocabulary. Real recordings can hit it too: the rms
+    guard in _worker() only drops digital silence, and quiet room noise
+    passes it. Repetition loops are filtered below, a short prompt echo on
+    a speechless window is not."""
     import mlx_whisper
 
-    kwargs: dict = {"path_or_hf_repo": MODEL}
+    # condition_on_previous_text=False: with it on, a window that looped
+    # ("podcast, podcast, ...") is fed as the prompt of the next 30 s window
+    # and the loop carries across. Off, every window after the first decodes
+    # without a prompt, which also means VOCABULARY only biases the first
+    # 30 s of a recording.
+    kwargs: dict = {
+        "path_or_hf_repo": MODEL,
+        "condition_on_previous_text": False,
+    }
     if language is not None:
         kwargs["language"] = language
     if use_vocabulary and INITIAL_PROMPT:
@@ -207,7 +222,23 @@ def transcribe(
     # transcription, and a fresh one must never overlap.
     with MLX_LOCK:
         result = mlx_whisper.transcribe(audio, **kwargs)
-    return result.get("text", "").strip()
+
+    # Whisper retries a repetitive window at higher temperatures, but when
+    # every retry fails it keeps the last one anyway. Drop those windows
+    # here. no_speech_prob is no help: with a forced language and a prompt
+    # it stays at 0.00 even on pure room noise.
+    kept = []
+    for seg in result.get("segments", []):
+        if seg["compression_ratio"] > COMPRESSION_RATIO_MAX:
+            print(
+                f"[whisper] dropped repetitive segment "
+                f"(compression_ratio={seg['compression_ratio']:.2f}): "
+                f"{seg['text'][:80]!r}",
+                file=sys.stderr,
+            )
+            continue
+        kept.append(seg["text"])
+    return "".join(kept).strip()
 
 
 # ============================================================================

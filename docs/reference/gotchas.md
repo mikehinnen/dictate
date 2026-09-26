@@ -16,12 +16,17 @@ Split out of `CLAUDE.md` on 2026-09-13, content unchanged.
   result is computed and then discarded.
 - The `initial_prompt` cuts both ways: it fixes domain spellings, and on audio without speech
   Whisper continues it, so the transcript becomes a mangled re-listing of `VOCABULARY`. Same
-  failure class as the silence hallucination, and the same guard covers it (`rms < 1e-5` in
-  `_worker()`). Keep the list bare terms, never sentences, and under the 224-token prompt
+  failure class as the silence hallucination. The `rms < 1e-5` guard in `_worker()` does **not**
+  cover it: that only catches digital silence, while a long recording of room noise (rms
+  ~0.002) passes and got a pasted vocabulary list ending in a "podcast, podcast, ..." loop.
+  `transcribe()` now drops segments with `compression_ratio > 2.4` (the loops) and runs with
+  `condition_on_previous_text=False` so a loop cannot carry into the next 30 s window. A short
+  echo of the list on a speechless window still gets through; `no_speech_prob` cannot catch
+  it, it stays at 0.00 with a forced language and a prompt. Keep the list bare terms, never sentences, and under the 224-token prompt
   window. `DICTATE_NO_VOCAB=1` turns it off for an A/B.
 - Runtime tunables are constants at the top of dictate.py (`MODEL`, `DEFAULT_LANGUAGE`,
-  `VOCABULARY`, `MAX_RECORDING_SECONDS`, `HISTORY_SIZE`, `HOTKEY_MODIFIERS`, `HOTKEY_TRIGGER`,
-  `PASTE_DELAY_BEFORE` / `PASTE_DELAY_AFTER`, `SOUND_START` / `SOUND_STOP` / `SOUND_CANCEL`)
+  `VOCABULARY`, `COMPRESSION_RATIO_MAX`, `MAX_RECORDING_SECONDS`, `HISTORY_SIZE`,
+  `HOTKEY_MODIFIERS`, `HOTKEY_TRIGGER`, `PASTE_DELAY_BEFORE` / `PASTE_DELAY_AFTER`, `SOUND_START` / `SOUND_STOP` / `SOUND_CANCEL`)
   and `LLM_MODEL` in modes.py. Any `mlx-community/*` model works.
 - Menubar icons are emoji by default. If all three of `menubar-idle.png`,
   `menubar-recording.png` and `menubar-transcribing.png` exist in

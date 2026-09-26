@@ -143,6 +143,7 @@ Constants at the top of `dictate.py`:
 | `MODEL` | `mlx-community/whisper-large-v3-turbo` | try `whisper-large-v3-turbo-german-f16`, `whisper-medium-mlx`, `whisper-small-mlx` |
 | `DEFAULT_LANGUAGE` | `"de"` | `"en"`, `None` (auto), also switchable at runtime via menu |
 | `VOCABULARY` | domain terms (ZHAW, Catalyst, PoE, Hyrox, ...) | fed to Whisper as `initial_prompt` so it spells them right; keep it a short term list, see below |
+| `COMPRESSION_RATIO_MAX` | `2.4` | segments above it are repetition loops and get dropped |
 | `MAX_RECORDING_SECONDS` | `120` | arbitrary |
 | `HISTORY_SIZE` | `5` | how many history entries to keep |
 | `HOTKEY_MODIFIERS` | `{Key.cmd, Key.shift}` | `⌘`+`⇧` is the most robust combo on macOS |
@@ -271,7 +272,10 @@ Or open `Console.app`.
   (DE-finetuned).
 - **Transcript reads like a list of the vocabulary terms** → that is the
   `initial_prompt` being continued, which means the audio carried no speech
-  (check the `rms=` value in the log). Confirm with `DICTATE_NO_VOCAB=1`.
+  (check the `rms=` value in the log: room noise sits around 0.002, speech
+  around 0.01). Long pauses in a recording do this too. Repetition loops are
+  dropped automatically (`[whisper] dropped repetitive segment` in the log),
+  a short list echo is not. Confirm with `DICTATE_NO_VOCAB=1`.
 - **First transcription after startup is fast** → the model is preloaded in
   the background; look for `[preload] Model loaded` in the log.
 - **Clear the model cache** → `rm -rf ~/.cache/huggingface/hub/models--mlx-community--whisper-*`

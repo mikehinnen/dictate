@@ -27,8 +27,11 @@ The single entrypoint and the bulk of the logic.
   bias the decoder towards domain spellings. `use_vocabulary=False` exists for
   `warmup_download()` alone: it transcribes literal zeros, and on speechless audio Whisper
   continues the prompt rather than ignoring it, so the smoke test would print a garbled
-  re-listing of the vocabulary. Recordings never hit that case, the rms guard in `_worker()`
-  drops digital silence first.
+  re-listing of the vocabulary. Recordings can hit it too, since the rms guard in `_worker()`
+  only drops digital silence. Runs with `condition_on_previous_text=False` (a looping window
+  would otherwise prompt the next one, at the price that `VOCABULARY` only biases the first
+  30 s) and drops segments above `COMPRESSION_RATIO_MAX` (2.4), the repetition loops Whisper
+  keeps when all temperature fallbacks fail.
 - `insert_text(text)`: saves the clipboard, writes the text, simulates Cmd+V via
   `pynput.Controller`, then restores the old clipboard (best effort, plain text only).
   `PASTE_DELAY_AFTER` (0.40 s) is deliberately generous because slow apps (Slack, Notion) drop

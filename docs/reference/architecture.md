@@ -52,7 +52,12 @@ The single entrypoint and the bulk of the logic.
     returned, so a hung engine cannot wedge the keyboard.
 - `_run()` worker guards against bad audio before transcribing: rejects recordings shorter
   than 0.3 s, and rejects `rms < 1e-5` (digital silence from a dead or virtual input device),
-  because Whisper hallucinates training-data phrases on silence.
+  because Whisper hallucinates training-data phrases on silence. Then `keep_speech()`: an
+  energy gate that keeps only 30 ms frames louder than 3x the recording's own noise floor (20th
+  percentile of frame RMS), merges runs closer than 1 s, pads each by 0.3 s and joins them with
+  0.5 s of zeros. Nothing above the floor means no transcription at all. This is what stops
+  the prompt echo and the "Vielen Dank." on long pauses or room noise, which the rms check
+  lets through.
 - Swiss-German normalization: the eszett is replaced by `ss` (and its capital form by `SS`)
   as the very last step, after any mode, so it catches both raw Whisper output and LLM output.
   Swiss German does not use the eszett.

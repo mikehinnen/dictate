@@ -20,12 +20,19 @@ Split out of `CLAUDE.md` on 2026-09-13, content unchanged.
   cover it: that only catches digital silence, while a long recording of room noise (rms
   ~0.002) passes and got a pasted vocabulary list ending in a "podcast, podcast, ..." loop.
   `transcribe()` now drops segments with `compression_ratio > 2.4` (the loops) and runs with
-  `condition_on_previous_text=False` so a loop cannot carry into the next 30 s window. A short
-  echo of the list on a speechless window still gets through; `no_speech_prob` cannot catch
-  it, it stays at 0.00 with a forced language and a prompt. Keep the list bare terms, never sentences, and under the 224-token prompt
-  window. `DICTATE_NO_VOCAB=1` turns it off for an A/B.
+  `condition_on_previous_text=False` so a loop cannot carry into the next 30 s window. The
+  actual fix is upstream: `keep_speech()` cuts every recording down to the stretches above its
+  own noise floor, so Whisper never sees a window without speech. `no_speech_prob` cannot
+  replace that gate, it stays at 0.00 with a forced language and a prompt. Keep the list bare
+  terms, never sentences, and under the 224-token prompt window. `DICTATE_NO_VOCAB=1` turns it
+  off for an A/B.
+- The energy gate (`GATE_*` in dictate.py) is tuned on synthetic audio: room noise at rms
+  0.002 to 0.005 is dropped whole, `say` speech down to rms 0.005 survives. Every decision is
+  logged as a `[gate] floor=... threshold=...` line. If a quiet word onset gets clipped, raise
+  `GATE_PAD_SECONDS` or lower `GATE_FLOOR_FACTOR`; if noise still gets through (a click or a
+  door counts as speech if it lasts 150 ms), raise `GATE_MIN_SPEECH_FRAMES`.
 - Runtime tunables are constants at the top of dictate.py (`MODEL`, `DEFAULT_LANGUAGE`,
-  `VOCABULARY`, `COMPRESSION_RATIO_MAX`, `MAX_RECORDING_SECONDS`, `HISTORY_SIZE`,
+  `VOCABULARY`, `COMPRESSION_RATIO_MAX`, `GATE_*`, `MAX_RECORDING_SECONDS`, `HISTORY_SIZE`,
   `HOTKEY_MODIFIERS`, `HOTKEY_TRIGGER`, `PASTE_DELAY_BEFORE` / `PASTE_DELAY_AFTER`, `SOUND_START` / `SOUND_STOP` / `SOUND_CANCEL`)
   and `LLM_MODEL` in modes.py. Any `mlx-community/*` model works.
 - Menubar icons are emoji by default. If all three of `menubar-idle.png`,

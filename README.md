@@ -144,6 +144,7 @@ Constants at the top of `dictate.py`:
 | `DEFAULT_LANGUAGE` | `"de"` | `"en"`, `None` (auto), also switchable at runtime via menu |
 | `VOCABULARY` | domain terms (ZHAW, Catalyst, PoE, Hyrox, ...) | fed to Whisper as `initial_prompt` so it spells them right; keep it a short term list, see below |
 | `COMPRESSION_RATIO_MAX` | `2.4` | segments above it are repetition loops and get dropped |
+| `GATE_*` | see `dictate.py` | energy gate: only speech above the recording's noise floor reaches Whisper |
 | `MAX_RECORDING_SECONDS` | `120` | arbitrary |
 | `HISTORY_SIZE` | `5` | how many history entries to keep |
 | `HOTKEY_MODIFIERS` | `{Key.cmd, Key.shift}` | `⌘`+`⇧` is the most robust combo on macOS |
@@ -273,9 +274,11 @@ Or open `Console.app`.
 - **Transcript reads like a list of the vocabulary terms** → that is the
   `initial_prompt` being continued, which means the audio carried no speech
   (check the `rms=` value in the log: room noise sits around 0.002, speech
-  around 0.01). Long pauses in a recording do this too. Repetition loops are
-  dropped automatically (`[whisper] dropped repetitive segment` in the log),
-  a short list echo is not. Confirm with `DICTATE_NO_VOCAB=1`.
+  around 0.01). The energy gate should cut such stretches out: look at the
+  `[gate]` line for that recording. If it kept noise as speech, see the
+  `GATE_*` constants. Confirm with `DICTATE_NO_VOCAB=1`.
+- **Start or end of a quiet sentence missing** → the energy gate clipped it.
+  Raise `GATE_PAD_SECONDS` or lower `GATE_FLOOR_FACTOR` in `dictate.py`.
 - **First transcription after startup is fast** → the model is preloaded in
   the background; look for `[preload] Model loaded` in the log.
 - **Clear the model cache** → `rm -rf ~/.cache/huggingface/hub/models--mlx-community--whisper-*`

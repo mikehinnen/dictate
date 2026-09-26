@@ -121,6 +121,16 @@ INITIAL_PROMPT: str | None = (
 # to 1.0.
 COMPRESSION_RATIO_MAX = 2.4
 
+# Energy gate in keep_speech(): only stretches louder than the recording's
+# own noise floor reach Whisper. See keep_speech() for how they combine.
+GATE_FRAME = 480                 # 30 ms at 16 kHz
+GATE_FLOOR_FACTOR = 3.0          # speech frame = louder than 3x the floor
+GATE_MIN_RMS = 0.003             # never call anything this quiet speech
+GATE_MIN_SPEECH_FRAMES = 5       # < 150 ms of speech total -> nothing said
+GATE_MERGE_SECONDS = 1.0         # pauses shorter than this stay in
+GATE_PAD_SECONDS = 0.3           # kept before/after each speech run
+GATE_JOIN_SECONDS = 0.5          # zeros between joined runs
+
 SAMPLE_RATE = 16_000
 MAX_RECORDING_SECONDS = 120
 HISTORY_SIZE = 5
@@ -191,16 +201,69 @@ def _clipboard_write(text: str) -> None:
 # Transcription
 # ============================================================================
 
+def keep_speech(audio: np.ndarray) -> np.ndarray:
+    """Cut the recording down to the stretches that carry speech.
+
+    Whisper never ignores a window without speech: it hallucinates into it
+    ("Vielen Dank.", a re-listing of VOCABULARY, repetition loops), and
+    no_speech_prob does not flag it. So speechless audio must not reach it.
+    Frames louder than GATE_FLOOR_FACTOR x the noise floor (the 20th
+    percentile of frame RMS, i.e. the quiet parts of this recording) count
+    as speech. Speech runs closer than GATE_MERGE_SECONDS are merged, each
+    run gets GATE_PAD_SECONDS on both sides so quiet word onsets survive,
+    and the runs are joined with GATE_JOIN_SECONDS of zeros. Returns an
+    empty array when nothing in the recording rises above the floor."""
+    n_frames = len(audio) // GATE_FRAME
+    if n_frames == 0:
+        return audio[:0]
+    frames = audio[: n_frames * GATE_FRAME].reshape(n_frames, GATE_FRAME)
+    frame_rms = np.sqrt(np.mean(frames**2, axis=1))
+    floor = float(np.percentile(frame_rms, 20))
+    threshold = max(floor * GATE_FLOOR_FACTOR, GATE_MIN_RMS)
+    loud = np.flatnonzero(frame_rms > threshold)
+    if len(loud) < GATE_MIN_SPEECH_FRAMES:
+        print(
+            f"[gate] floor={floor:.6f} threshold={threshold:.6f}: only "
+            f"{len(loud)} frame(s) above it"
+        )
+        return audio[:0]
+
+    frame_sec = GATE_FRAME / SAMPLE_RATE
+    merge = int(GATE_MERGE_SECONDS / frame_sec)
+    pad = int(GATE_PAD_SECONDS * SAMPLE_RATE)
+    runs: list[list[int]] = []
+    for f in loud:
+        if runs and f - runs[-1][1] <= merge:
+            runs[-1][1] = f
+        else:
+            runs.append([f, f])
+
+    gap = np.zeros(int(GATE_JOIN_SECONDS * SAMPLE_RATE), dtype=audio.dtype)
+    pieces: list[np.ndarray] = []
+    last_end = 0
+    for start_f, end_f in runs:
+        start = max(start_f * GATE_FRAME - pad, last_end)
+        end = min((end_f + 1) * GATE_FRAME + pad, len(audio))
+        if pieces:
+            pieces.append(gap)
+        pieces.append(audio[start:end])
+        last_end = end
+    print(
+        f"[gate] floor={floor:.6f} threshold={threshold:.6f}: kept "
+        f"{sum(len(p) for p in pieces[::2]) / SAMPLE_RATE:.1f}s of "
+        f"{len(audio) / SAMPLE_RATE:.1f}s in {len(runs)} run(s)"
+    )
+    return np.concatenate(pieces)
+
+
 def transcribe(
     audio: np.ndarray, language: str | None, *, use_vocabulary: bool = True
 ) -> str:
     """`use_vocabulary=False` skips VOCABULARY. Only the warmup needs that:
     it feeds literal zeros, and on speechless audio Whisper continues the
     prompt instead of ignoring it, so the smoke test would print a garbled
-    re-listing of the vocabulary. Real recordings can hit it too: the rms
-    guard in _worker() only drops digital silence, and quiet room noise
-    passes it. Repetition loops are filtered below, a short prompt echo on
-    a speechless window is not."""
+    re-listing of the vocabulary. Recordings are cut down by keep_speech()
+    in _worker() first, so they reach this with the pauses removed."""
     import mlx_whisper
 
     # condition_on_previous_text=False: with it on, a window that looped
@@ -526,6 +589,13 @@ class Dictation:
                     "(wrong/dead input device or missing mic permission). "
                     "Skipping transcription.",
                     file=sys.stderr,
+                )
+                return
+            audio = keep_speech(audio)
+            if len(audio) == 0:
+                print(
+                    "[gate] Nothing above the noise floor, skipping "
+                    "transcription."
                 )
                 return
             if not is_stale():

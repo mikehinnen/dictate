@@ -58,7 +58,7 @@ try:
 except Exception as _e:  # noqa: BLE001
     print(f"[pynput-shim] could not patch HIServices.AXIsProcessTrusted: {_e}", file=sys.stderr)
 
-from pynput.keyboard import Controller, HotKey, Key, KeyCode, Listener
+from pynput.keyboard import HotKey, Key, KeyCode, Listener
 
 from audio import (
     AudioEngineError,
@@ -308,6 +308,30 @@ def transcribe(
 # Insert text
 # ============================================================================
 
+KVK_ANSI_V = 9  # physical V key; same position on QWERTY and QWERTZ
+
+
+def _post_cmd_v() -> None:
+    """Posts Cmd+V straight via Quartz with a fixed virtual keycode.
+
+    Not pynput.Controller: its constructor reads the keyboard layout via
+    TSMGetInputSourceProperty, which macOS 27 only allows on the main queue.
+    Called from the transcription worker it trips a dispatch assert and the
+    process dies with SIGTRAP (exit status 133).
+    """
+    from Quartz import (  # type: ignore[import-not-found]
+        CGEventCreateKeyboardEvent,
+        CGEventPost,
+        CGEventSetFlags,
+        kCGEventFlagMaskCommand,
+        kCGHIDEventTap,
+    )
+    for key_down in (True, False):
+        event = CGEventCreateKeyboardEvent(None, KVK_ANSI_V, key_down)
+        CGEventSetFlags(event, kCGEventFlagMaskCommand)
+        CGEventPost(kCGHIDEventTap, event)
+
+
 def insert_text(text: str) -> None:
     if not text:
         print("[paste] Empty text, skipping.")
@@ -317,10 +341,7 @@ def insert_text(text: str) -> None:
     _clipboard_write(text)
     time.sleep(PASTE_DELAY_BEFORE)
 
-    kb = Controller()
-    with kb.pressed(Key.cmd):
-        kb.press("v")
-        kb.release("v")
+    _post_cmd_v()
 
     time.sleep(PASTE_DELAY_AFTER)
 
@@ -337,7 +358,7 @@ def insert_text(text: str) -> None:
 def check_accessibility_permission() -> bool | None:
     """Returns True if Accessibility is granted, False if not, None if the
     check API is unavailable. Accessibility is required for simulating ⌘V
-    via pynput.Controller (paste-after-transcription).
+    via Quartz CGEventPost (paste-after-transcription).
     """
     try:
         from ApplicationServices import AXIsProcessTrusted  # type: ignore[import-not-found]

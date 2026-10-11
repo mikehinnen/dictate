@@ -33,7 +33,7 @@ The single entrypoint and the bulk of the logic.
   30 s) and drops segments above `COMPRESSION_RATIO_MAX` (2.4), the repetition loops Whisper
   keeps when all temperature fallbacks fail.
 - `insert_text(text)`: saves the clipboard, writes the text, simulates Cmd+V via
-  `pynput.Controller`, then restores the old clipboard (best effort, plain text only).
+  a Quartz `CGEventPost` (fixed keycode, no layout lookup), then restores the old clipboard (best effort, plain text only).
   `PASTE_DELAY_AFTER` (0.40 s) is deliberately generous because slow apps (Slack, Notion) drop
   the paste otherwise.
 - Clipboard access uses `NSPasteboard` (via pyobjc, shipped with rumps) with a

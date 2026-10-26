@@ -10,7 +10,7 @@ Workflow:
 Hotkey pressed during transcription = cancel (result is discarded).
 
 Menubar icon shows state:
-    idle           🎙  (or Resources/menubar-idle.png)
+    idle           🎤  (or Resources/menubar-idle.png)
     recording      🔴  (or Resources/menubar-recording.png)
     transcribing   ⏳  (or Resources/menubar-transcribing.png)
 

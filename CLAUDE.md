@@ -10,9 +10,9 @@ menu (dictate.py), which are UI typography, not prose.
 
 ## Read on demand
 
-- `docs/reference/architecture.md` — the per-module walkthrough (dictate.py, audio.py,
+- `docs/reference/architecture.md`: the per-module walkthrough (dictate.py, audio.py,
   modes.py, the Swift launcher) and the data flow
-- `docs/reference/gotchas.md` — TCC grants, Secure Input, runtime tunables, doc invariants
+- `docs/reference/gotchas.md`: TCC grants, Secure Input, runtime tunables, doc invariants
 
 ## Project
 

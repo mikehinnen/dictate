@@ -110,7 +110,7 @@ bind to **Dictate.app**, *not* to the Terminal.
 | Permission | Why | When prompted |
 |---|---|---|
 | **Microphone** | Audio capture | First recording |
-| **Accessibility** | Simulate `⌘V` | First paste |
+| **Accessibility** (macOS 27: *Device Control and Data Access*) | Simulate `⌘V` | First paste |
 | **Input Monitoring** | Global hotkey | First launch |
 
 Direct links to the settings panes:
@@ -264,7 +264,7 @@ Or open `Console.app`.
   was moved or renamed, see *"If you move or rename the project folder"*.
   If the menubar Start/Stop still works, it is Secure Input instead, see the
   bullet further down.
-- **`⌘V` doesn't paste after transcription** → *Accessibility* permission
+- **`⌘V` doesn't paste after transcription** → *Accessibility* permission (macOS 27: *Device Control and Data Access*)
   missing (see above). If it still fails in slow apps (Slack, Notion),
   increase `PASTE_DELAY_AFTER` in `dictate.py`.
 - **Wrong German words in the transcript** → if it is domain vocabulary
@@ -291,7 +291,8 @@ Or open `Console.app`.
 - **Hotkey or paste stopped working after `bash launcher/build.sh`** →
   rebuilding produces a Mach-O with a fresh cdhash, so TCC considers the
   grant stale. The "Dictate" entry in Input Monitoring / Accessibility
-  may still look present but be non-functional. Fix: remove the entry
+  may still look present and toggled on but be non-functional. The rebuild
+  also drops the login item; re-enable it from the Dictate menu. Fix: remove the entry
   (`−`), re-add the current `Dictate.app` (`+`), toggle on, restart the
   app. Nuclear option: `tccutil reset ListenEvent ch.hinn.dictate &&
   tccutil reset Accessibility ch.hinn.dictate && tccutil reset Microphone

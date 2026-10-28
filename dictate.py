@@ -986,7 +986,9 @@ class DictateApp(rumps.App):
             print(
                 "[permissions] Accessibility: MISSING -- paste will silently "
                 "fail. Fix: System Settings > Privacy & Security > "
-                "Accessibility, add Dictate.app, toggle on, restart app."
+                "Accessibility (macOS 27: Device Control and Data Access), "
+                "remove any stale Dictate entry, add Dictate.app, toggle on, "
+                "restart app."
             )
         else:
             print("[permissions] Accessibility: unable to verify")

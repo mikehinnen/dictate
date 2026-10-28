@@ -173,6 +173,25 @@ do {
     exit(1)
 }
 
+// Forward termination signals to the child. Without this, `kill <launcher>`
+// ends only the launcher and leaves uv + Python orphaned (PPID 1), still
+// holding the hotkey and menubar item. uv forwards the signal on to Python.
+// The SIG_IGN dispositions are set only after the spawn on purpose: ignored
+// signals survive exec, so setting them earlier would make the child immune.
+// waitUntilExit() below then returns once the child is gone.
+let forwardedSignals: [Int32] = [SIGTERM, SIGINT, SIGHUP]
+let signalSources: [DispatchSourceSignal] = forwardedSignals.map { sig in
+    signal(sig, SIG_IGN)
+    let source = DispatchSource.makeSignalSource(signal: sig, queue: .global())
+    source.setEventHandler {
+        log("Launcher got signal \(sig), forwarding to child")
+        kill(task.processIdentifier, sig)
+    }
+    source.resume()
+    return source
+}
+
 task.waitUntilExit()
+withExtendedLifetime(signalSources) {}
 log("Child exited with status: \(task.terminationStatus)")
 exit(task.terminationStatus)

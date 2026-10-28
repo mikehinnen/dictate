@@ -74,7 +74,7 @@ from HuggingFace, cached locally afterwards:
 
 | Model | Size | Downloaded when | Cache location |
 |---|---|---|---|
-| Whisper (`whisper-large-v3-turbo`) | ~1.5 GB | Setup (`--download`) or first recording | `~/.cache/huggingface/hub/models--mlx-community--whisper-*` |
+| Whisper (`whisper-large-v3-turbo-german-f16`) | ~1.5 GB | Setup (`--download`) or first recording | `~/.cache/huggingface/hub/models--mlx-community--whisper-*` |
 | LLM (`Meta-Llama-3.1-8B-Instruct-4bit`) | ~5 GB | First use of Translate | `~/.cache/huggingface/hub/models--mlx-community--Meta-Llama-*` |
 
 After both are cached, you can cut the network entirely and the app
@@ -140,7 +140,7 @@ Constants at the top of `dictate.py`:
 
 | Constant | Default | Notes |
 |---|---|---|
-| `MODEL` | `mlx-community/whisper-large-v3-turbo` | try `whisper-large-v3-turbo-german-f16`, `whisper-medium-mlx`, `whisper-small-mlx` |
+| `MODEL` | `mlx-community/whisper-large-v3-turbo-german-f16` | try `whisper-large-v3-turbo` (multilingual), `whisper-large-v3-mlx` (slower, more accurate), `whisper-medium-mlx`, `whisper-small-mlx` |
 | `DEFAULT_LANGUAGE` | `"de"` | `"en"`, `None` (auto), also switchable at runtime via menu |
 | `VOCABULARY` | domain terms (ZHAW, Catalyst, PoE, Hyrox, ...) | fed to Whisper as `initial_prompt` so it spells them right; keep it a short term list, see below |
 | `COMPRESSION_RATIO_MAX` | `2.4` | segments above it are repetition loops and get dropped |
@@ -193,7 +193,7 @@ HuggingFace-hub caches the first-downloaded snapshot and reuses it
 forever. To force-refresh:
 
 ```sh
-rm -rf ~/.cache/huggingface/hub/models--mlx-community--whisper-large-v3-turbo
+rm -rf ~/.cache/huggingface/hub/models--mlx-community--whisper-large-v3-turbo-german-f16
 rm -rf ~/.cache/huggingface/hub/models--mlx-community--Meta-Llama-3.1-8B-Instruct-4bit
 ```
 
@@ -205,7 +205,7 @@ on major fixes.
 
 ```python
 # dictate.py
-MODEL = "mlx-community/whisper-large-v3-turbo-german-f16"   # DE-finetuned
+MODEL = "mlx-community/whisper-large-v3-mlx"   # full decoder, slower
 
 # modes.py
 LLM_MODEL = "mlx-community/Llama-3.2-3B-Instruct-4bit"  # smaller, faster
@@ -269,8 +269,8 @@ Or open `Console.app`.
   increase `PASTE_DELAY_AFTER` in `dictate.py`.
 - **Wrong German words in the transcript** → if it is domain vocabulary
   (product names, jargon), add it to `VOCABULARY` in `dictate.py`. Otherwise
-  switch `MODEL` to `mlx-community/whisper-large-v3-turbo-german-f16`
-  (DE-finetuned).
+  switch `MODEL` to `mlx-community/whisper-large-v3-mlx`
+  (full decoder: more accurate, several times slower).
 - **Transcript reads like a list of the vocabulary terms** → that is the
   `initial_prompt` being continued, which means the audio carried no speech
   (check the `rms=` value in the log: room noise sits around 0.002, speech

@@ -73,7 +73,7 @@ from modes import MLX_LOCK, MODES, Mode, preload_llm, safe_transform
 # Configuration
 # ============================================================================
 
-MODEL = "mlx-community/whisper-large-v3-turbo"
+MODEL = "mlx-community/whisper-large-v3-turbo-german-f16"
 DEFAULT_LANGUAGE: str | None = "de"  # None = auto-detect
 
 # (Menu label, Whisper language code or None for auto)
@@ -102,10 +102,10 @@ VOCABULARY: tuple[str, ...] = (
     "ZHAW", "SD-Access", "Fabric", "Catalyst Center", "Catalyst 9300",
     "Catalyst 9500", "PoE", "UPoE", "Multigig", "Access Point", "Uplink",
     "Distribution", "Border", "VLAN", "VRF", "BGP", "LISP", "WLC", "ISE",
-    "Infoblox", "SWIM", "Lifecycle", "End of Life",
+    "Infoblox", "SWIM", "Lifecycle", "End of Life", "IP-Adresse", "VN",
     # Tooling
     "Claude Code", "MCP-Server", "Skill", "Repo", "Confluence", "Jira",
-    "Topdesk",
+    "Topdesk", "CLAUDE.md",
     # Sport
     "Hyrox",
 )

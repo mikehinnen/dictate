@@ -14,3 +14,6 @@ wheels/
 
 # Compiled Swift launcher binary (rebuild via launcher/build.sh)
 Dictate.app/Contents/MacOS/Dictate
+
+# Ad-hoc code signature written by launcher/build.sh, changes every build
+Dictate.app/Contents/_CodeSignature/

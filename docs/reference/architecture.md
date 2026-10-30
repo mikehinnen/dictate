@@ -50,6 +50,11 @@ The single entrypoint and the bulk of the logic.
     it.
   - `_stop()` also force-resets to idle if a stop was already requested but the worker never
     returned, so a hung engine cannot wedge the keyboard.
+  - The state and history callbacks fire on the worker or hotkey thread, so the app side
+    (`_on_state_change`, `_add_to_history`) hands every AppKit mutation to the main thread via
+    `PyObjCTools.AppHelper.callAfter`. Setting the status item or menu titles directly from a
+    worker crashed the app with SIGSEGV: at thread exit the worker's implicit CATransaction
+    redraws the status button off-main, racing the main thread (30.10.2026).
 - `_run()` worker guards against bad audio before transcribing: rejects recordings shorter
   than 0.3 s, and rejects `rms < 1e-5` (digital silence from a dead or virtual input device),
   because Whisper hallucinates training-data phrases on silence. Then `keep_speech()`: an

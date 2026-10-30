@@ -40,6 +40,7 @@ from typing import Callable
 
 import numpy as np
 import rumps
+from PyObjCTools.AppHelper import callAfter
 
 # pynput (still as of 1.8.2) looks up AXIsProcessTrusted on the HIServices
 # module. pyobjc 12.2.1 did not expose it there -- it lived only on
@@ -1056,9 +1057,12 @@ class DictateApp(rumps.App):
             self._toggle_item.title = f"Start recording  ({hk})"
 
     def _on_state_change(self, state: str) -> None:
-        # Updating rumps properties from worker threads works in practice for
-        # title/icon (AppKit queues the change).
-        self._apply_appearance(state)
+        # Called from the dictation worker and the hotkey listener thread.
+        # AppKit must only be touched on the main thread: a status item
+        # mutated off-main gets redrawn by that thread's implicit CATransaction
+        # at thread exit, racing the main thread (SIGSEGV in
+        # swift_release_dealloc, 30.10.2026).
+        callAfter(self._apply_appearance, state)
 
     # ---------- Preload ----------
 
@@ -1122,6 +1126,11 @@ class DictateApp(rumps.App):
     # ---------- History ----------
 
     def _add_to_history(self, text: str) -> None:
+        # Called from the dictation worker; menu items are AppKit objects,
+        # see _on_state_change.
+        callAfter(self._add_to_history_main, text)
+
+    def _add_to_history_main(self, text: str) -> None:
         self._history.appendleft(text)
         self._refresh_history_menu()
 

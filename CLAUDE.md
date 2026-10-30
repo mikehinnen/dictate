@@ -68,6 +68,9 @@ There is no test suite and no linter config. Verification is manual: run the app
   into MLX must take the lock.
 - **Any worker that mutates UI state or pastes must respect the `is_stale()` / generation
   guard in `Dictation`.** It was the fix for the stuck-recording bug; do not remove it.
+- **AppKit only on the main thread.** Any UI change (status item, menu titles) triggered from
+  a worker or the hotkey listener goes through `AppHelper.callAfter`. Off-main mutation
+  segfaults at worker thread exit.
 - **New tap installs must use the input node's native format**, never a forced 16 kHz mono
   format. A mismatched tap format raises an NSException inside CoreAudio.
 - Rebuilding via `build.sh` invalidates all three TCC grants. Expect to re-add the app in the
